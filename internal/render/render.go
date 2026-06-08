@@ -22,6 +22,14 @@ type PositionView struct {
 	Reinstated bool     `json:"reinstated"`
 }
 
+// DecidedView is the standing decision on an issue, if any.
+type DecidedView struct {
+	Position string `json:"position"`
+	Basis    string `json:"basis,omitempty"`
+	Decider  string `json:"decider"`
+	Override bool   `json:"override"`
+}
+
 // IssueStatus is the status envelope for one issue (design §8.3).
 type IssueStatus struct {
 	Issue       string         `json:"issue"`
@@ -30,10 +38,12 @@ type IssueStatus struct {
 	Positions   []PositionView `json:"positions"`
 	Undecided   []string       `json:"undecided"`
 	Advice      string         `json:"advice"`
+	Decided     *DecidedView   `json:"decided,omitempty"`
 }
 
-// Status computes the status of one issue.
-func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue string) IssueStatus {
+// Status computes the status of one issue. decs are the in-force decisions at
+// the current viewpoint (used to surface a standing decision).
+func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue string, decs []ibis.Decision) IssueStatus {
 	attackers := map[string][]string{}
 	for _, e := range fw.Attack {
 		attackers[e.To] = append(attackers[e.To], e.From)
@@ -73,6 +83,11 @@ func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue s
 		}
 	}
 	st.Advice = advise(st)
+	for _, d := range decs {
+		if d.Issue == issue {
+			st.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override}
+		}
+	}
 	return st
 }
 
@@ -112,6 +127,13 @@ func StatusText(st IssueStatus) string {
 			fmt.Fprint(&b, "  (reinstated)")
 		}
 		b.WriteByte('\n')
+	}
+	if st.Decided != nil {
+		flag := ""
+		if st.Decided.Override {
+			flag = " (OVERRIDE — was not IN at decision time)"
+		}
+		fmt.Fprintf(&b, "  ✓ decided: %s by %s%s\n", st.Decided.Position, st.Decided.Decider, flag)
 	}
 	fmt.Fprintf(&b, "  → %s\n", st.Advice)
 	return b.String()

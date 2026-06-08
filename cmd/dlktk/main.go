@@ -26,11 +26,12 @@ import (
 
 // global flags
 var (
-	flagDisc  string
-	flagJSON  string
-	flagStore string
-	flagRole  string
-	flagAsOf  string
+	flagDisc    string
+	flagJSON    string
+	flagStore   string
+	flagRole    string
+	flagAsOf    string
+	flagValidAt string
 )
 
 const currentPointer = ".dlktk/current"
@@ -59,29 +60,44 @@ func root() *cobra.Command {
 	c.PersistentFlags().StringVar(&flagStore, "store", "", "pudl store dir (default: repo .pudl/ else ~/.pudl)")
 	c.PersistentFlags().StringVar(&flagRole, "role", "", "author/role attribution for moves (default: OS user)")
 	c.PersistentFlags().StringVar(&flagAsOf, "as-of", "", "transaction-time travel: evaluate as of T (RFC3339 or Unix seconds)")
+	c.PersistentFlags().StringVar(&flagValidAt, "valid-at", "", "valid-time: which decisions were in force at T (RFC3339 or Unix seconds)")
 
 	c.AddCommand(
 		cmdNew(), cmdUse(), cmdList(),
 		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(),
 		cmdConcede("concede"), cmdConcede("retract"),
 		cmdStatus(), cmdTree(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdDiscover(),
+		cmdReplay(), cmdLog(),
 	)
 	return c
 }
 
-// asOf parses the --as-of flag into a Unix-seconds pointer (nil = now).
-func asOf() (*int64, error) {
-	if flagAsOf == "" {
+// parseTime parses an RFC3339 or Unix-seconds string into a pointer (nil empty).
+func parseTime(flag, val string) (*int64, error) {
+	if val == "" {
 		return nil, nil
 	}
-	if t, err := time.Parse(time.RFC3339, flagAsOf); err == nil {
+	if t, err := time.Parse(time.RFC3339, val); err == nil {
 		u := t.Unix()
 		return &u, nil
 	}
-	if u, err := strconv.ParseInt(flagAsOf, 10, 64); err == nil {
+	if u, err := strconv.ParseInt(val, 10, 64); err == nil {
 		return &u, nil
 	}
-	return nil, fail.New(fail.CodeGeneric, "bad_as_of", "--as-of %q is neither RFC3339 nor Unix seconds", flagAsOf)
+	return nil, fail.New(fail.CodeGeneric, "bad_time", "%s %q is neither RFC3339 nor Unix seconds", flag, val)
+}
+
+// when assembles the temporal viewpoint from --as-of (tt) and --valid-at (vt).
+func when() (store.When, error) {
+	tx, err := parseTime("--as-of", flagAsOf)
+	if err != nil {
+		return store.When{}, err
+	}
+	va, err := parseTime("--valid-at", flagValidAt)
+	if err != nil {
+		return store.When{}, err
+	}
+	return store.When{Tx: tx, Valid: va}, nil
 }
 
 // --- helpers ---
@@ -157,7 +173,7 @@ func loadFramework() (*ibis.Graph, *af.Framework, map[string]af.Label, error) {
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	ao, err := asOf()
+	w, err := when()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -166,7 +182,7 @@ func loadFramework() (*ibis.Graph, *af.Framework, map[string]af.Label, error) {
 		return nil, nil, nil, err
 	}
 	defer s.Close()
-	g, err := s.Graph(disc, ao)
+	g, err := s.Graph(disc, w)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -246,6 +262,111 @@ func cmdWhy() *cobra.Command {
 	}
 }
 
+func cmdReplay() *cobra.Command {
+	var diff bool
+	c := &cobra.Command{
+		Use:   "replay [issue]",
+		Short: "labelling at --as-of T (and what changed since, with --diff)",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if flagAsOf == "" {
+				return fail.New(fail.CodeGeneric, "missing_as_of", "replay requires --as-of T")
+			}
+			disc, err := resolveDisc()
+			if err != nil {
+				return err
+			}
+			tx, err := parseTime("--as-of", flagAsOf)
+			if err != nil {
+				return err
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			gThen, err := s.Graph(disc, store.When{Tx: tx})
+			if err != nil {
+				return err
+			}
+			lThen := af.Build(gThen).Grounded()
+
+			if diff {
+				gNow, err := s.Graph(disc, store.Now())
+				if err != nil {
+					return err
+				}
+				lNow := af.Build(gNow).Grounded()
+				v := render.Diff(flagAsOf, gThen, gNow, lThen, lNow)
+				if wantJSON() {
+					out, _ := render.JSON(v)
+					fmt.Println(out)
+					return nil
+				}
+				fmt.Print(render.DiffText(v))
+				return nil
+			}
+
+			// No --diff: the grounded labelling as it stood at T.
+			fwThen := af.Build(gThen)
+			decs, err := s.Decisions(disc, store.When{Tx: tx})
+			if err != nil {
+				return err
+			}
+			var views []render.IssueStatus
+			for _, iss := range targetIssues(gThen, args) {
+				views = append(views, render.Status(gThen, fwThen, lThen, iss, decs))
+			}
+			if wantJSON() {
+				out, _ := render.JSON(views)
+				fmt.Println(out)
+				return nil
+			}
+			for _, v := range views {
+				fmt.Print(render.StatusText(v))
+			}
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&diff, "diff", false, "diff the as-of labelling against now")
+	return c
+}
+
+func cmdLog() *cobra.Command {
+	return &cobra.Command{
+		Use:   "log [node]",
+		Short: "transaction-time history (audit trail), optionally for one node",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			disc, err := resolveDisc()
+			if err != nil {
+				return err
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			node := ""
+			if len(args) == 1 {
+				node = args[0]
+			}
+			entries, err := s.History(disc, node)
+			if err != nil {
+				return err
+			}
+			if wantJSON() {
+				out, _ := render.JSON(entries)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.LogText(entries))
+			return nil
+		},
+	}
+}
+
 func cmdDiscover() *cobra.Command {
 	return &cobra.Command{
 		Use:   "discover",
@@ -316,7 +437,7 @@ func cmdList() *cobra.Command {
 				return err
 			}
 			defer s.Close()
-			ds, err := s.Discussions(nil)
+			ds, err := s.Discussions(store.Now())
 			if err != nil {
 				return err
 			}
@@ -492,11 +613,15 @@ func cmdStatus() *cobra.Command {
 				return err
 			}
 			defer s.Close()
-			ao, err := asOf()
+			w, err := when()
 			if err != nil {
 				return err
 			}
-			g, err := s.Graph(disc, ao)
+			g, err := s.Graph(disc, w)
+			if err != nil {
+				return err
+			}
+			decs, err := s.Decisions(disc, w)
 			if err != nil {
 				return err
 			}
@@ -506,7 +631,7 @@ func cmdStatus() *cobra.Command {
 			issues := targetIssues(g, args)
 			var views []render.IssueStatus
 			for _, iss := range issues {
-				views = append(views, render.Status(g, fw, labels, iss))
+				views = append(views, render.Status(g, fw, labels, iss, decs))
 			}
 			if wantJSON() {
 				out, _ := render.JSON(views)
@@ -539,11 +664,11 @@ func cmdTree() *cobra.Command {
 				return err
 			}
 			defer s.Close()
-			ao, err := asOf()
+			w, err := when()
 			if err != nil {
 				return err
 			}
-			g, err := s.Graph(disc, ao)
+			g, err := s.Graph(disc, w)
 			if err != nil {
 				return err
 			}

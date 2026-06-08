@@ -22,7 +22,7 @@ func New(s *store.Store, author string) *Mover { return &Mover{s: s, author: aut
 // Raise adds an issue, optionally responding to a parent issue, with default
 // select_one cardinality. Returns the new issue id.
 func (m *Mover) Raise(disc, text, parent string) (string, error) {
-	g, err := m.s.Graph(disc, nil)
+	g, err := m.s.Graph(disc, store.Now())
 	if err != nil {
 		return "", err
 	}
@@ -46,7 +46,7 @@ func (m *Mover) Raise(disc, text, parent string) (string, error) {
 
 // Propose adds a position responding to an issue. Returns the new position id.
 func (m *Mover) Propose(disc, issue, text string) (string, error) {
-	g, err := m.s.Graph(disc, nil)
+	g, err := m.s.Graph(disc, store.Now())
 	if err != nil {
 		return "", err
 	}
@@ -74,7 +74,7 @@ func (m *Mover) Object(disc, target, text string) (string, error) {
 }
 
 func (m *Mover) attach(disc, target, text string, rel ibis.Rel) (string, error) {
-	g, err := m.s.Graph(disc, nil)
+	g, err := m.s.Graph(disc, store.Now())
 	if err != nil {
 		return "", err
 	}
@@ -93,7 +93,7 @@ func (m *Mover) attach(disc, target, text string, rel ibis.Rel) (string, error) 
 
 // Prefer records winner preferred to loser with a basis label.
 func (m *Mover) Prefer(disc, winner, loser, basis string) (string, error) {
-	g, err := m.s.Graph(disc, nil)
+	g, err := m.s.Graph(disc, store.Now())
 	if err != nil {
 		return "", err
 	}
@@ -112,7 +112,7 @@ func (m *Mover) Prefer(disc, winner, loser, basis string) (string, error) {
 // Decide closes an issue by accepting a position. The override flag is set when
 // the accepted position is not IN under the current grounded labelling.
 func (m *Mover) Decide(disc, issue, position, basis string) error {
-	g, err := m.s.Graph(disc, nil)
+	g, err := m.s.Graph(disc, store.Now())
 	if err != nil {
 		return err
 	}
@@ -121,6 +121,11 @@ func (m *Mover) Decide(disc, issue, position, basis string) error {
 	}
 	labels := af.Build(g).Grounded()
 	override := labels[position] != af.IN
+	// Supersede any standing decision on this issue (close its vt interval),
+	// then record the new one. Policy: auto-supersede (design §16.7).
+	if err := m.s.SupersedeDecision(disc, issue); err != nil {
+		return err
+	}
 	return m.s.AddDecision(ibis.Decision{
 		Disc: disc, Issue: issue, Position: position, Basis: basis,
 		Decider: m.author, Override: override,
@@ -129,7 +134,7 @@ func (m *Mover) Decide(disc, issue, position, basis string) error {
 
 // Concede withdraws one of the author's own nodes (alias: retract).
 func (m *Mover) Concede(disc, node string) error {
-	g, err := m.s.Graph(disc, nil)
+	g, err := m.s.Graph(disc, store.Now())
 	if err != nil {
 		return err
 	}

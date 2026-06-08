@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/chazu/dlktk/internal/af"
 	"github.com/chazu/dlktk/internal/ibis"
+	"github.com/chazu/dlktk/internal/store"
 )
 
 // MoveSuggestion is a legal, useful next move in {move,args,effect} shape
@@ -173,6 +175,92 @@ func AgendaText(v AgendaView) string {
 	fmt.Fprintln(&b, "live agenda (UNDEC):")
 	for _, n := range v.Undecided {
 		fmt.Fprintf(&b, "  %s%s  %q\n", ibis.PrefixFor(ibis.Kind(n.Kind)), n.ID, n.Text)
+	}
+	return b.String()
+}
+
+// LabelChange records a node whose grounded label moved between two viewpoints.
+type LabelChange struct {
+	Node string `json:"node"`
+	Text string `json:"text"`
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// DiffView is the replay --diff result: structural and label changes between a
+// past transaction-time T and now.
+type DiffView struct {
+	AsOf    string        `json:"as_of"`
+	Added   []NodeRef     `json:"added"`   // present now, absent at T
+	Removed []NodeRef     `json:"removed"` // present at T, absent now (retracted)
+	Flipped []LabelChange `json:"flipped"` // label changed between T and now
+}
+
+// Diff compares the graph + grounded labelling at T against now.
+func Diff(asOf string, gThen, gNow *ibis.Graph, lThen, lNow map[string]af.Label) DiffView {
+	v := DiffView{AsOf: asOf}
+	for id, n := range gNow.Nodes {
+		if _, ok := gThen.Nodes[id]; !ok {
+			v.Added = append(v.Added, NodeRef{ID: id, Kind: string(n.Kind), Text: n.Text, Label: string(lNow[id])})
+		}
+	}
+	for id, n := range gThen.Nodes {
+		if _, ok := gNow.Nodes[id]; !ok {
+			v.Removed = append(v.Removed, NodeRef{ID: id, Kind: string(n.Kind), Text: n.Text, Label: string(lThen[id])})
+		}
+	}
+	for id := range gNow.Nodes {
+		if _, ok := gThen.Nodes[id]; !ok {
+			continue
+		}
+		from, to := lThen[id], lNow[id]
+		if from != to {
+			v.Flipped = append(v.Flipped, LabelChange{Node: id, Text: gNow.Nodes[id].Text, From: string(from), To: string(to)})
+		}
+	}
+	sort.Slice(v.Added, func(i, j int) bool { return v.Added[i].ID < v.Added[j].ID })
+	sort.Slice(v.Removed, func(i, j int) bool { return v.Removed[i].ID < v.Removed[j].ID })
+	sort.Slice(v.Flipped, func(i, j int) bool { return v.Flipped[i].Node < v.Flipped[j].Node })
+	return v
+}
+
+// DiffText renders a DiffView.
+func DiffText(v DiffView) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "replay diff (as-of %s → now)\n", v.AsOf)
+	if len(v.Added) == 0 && len(v.Removed) == 0 && len(v.Flipped) == 0 {
+		b.WriteString("  no changes\n")
+		return b.String()
+	}
+	for _, n := range v.Added {
+		fmt.Fprintf(&b, "  + %s%s  %q  [%s]\n", ibis.PrefixFor(ibis.Kind(n.Kind)), n.ID, n.Text, n.Label)
+	}
+	for _, n := range v.Removed {
+		fmt.Fprintf(&b, "  - %s%s  %q\n", ibis.PrefixFor(ibis.Kind(n.Kind)), n.ID, n.Text)
+	}
+	for _, c := range v.Flipped {
+		fmt.Fprintf(&b, "  ~ %s  %s → %s  %q\n", c.Node, c.From, c.To, c.Text)
+	}
+	return b.String()
+}
+
+// LogText renders a store history (audit trail) as human text.
+func LogText(entries []store.HistoryEntry) string {
+	if len(entries) == 0 {
+		return "no history\n"
+	}
+	var b strings.Builder
+	for _, e := range entries {
+		state := "+"
+		if e.Retracted {
+			state = "×"
+		}
+		ts := time.Unix(e.TxStart, 0).UTC().Format(time.RFC3339)
+		fmt.Fprintf(&b, "%s %s  %s  %s", state, ts, e.Summary, e.Author)
+		if e.ID != "" {
+			fmt.Fprintf(&b, "  (%s)", e.ID)
+		}
+		b.WriteByte('\n')
 	}
 	return b.String()
 }

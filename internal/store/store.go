@@ -5,6 +5,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/chazu/pudl/pkg/factstore"
 
@@ -51,10 +52,21 @@ func (s *Store) add(relation string, payload any, source string) error {
 	return nil
 }
 
-// scan returns the current (or as-of) facts for a relation, unmarshalling each
-// args object into a fresh T. asOf is a Unix transaction time, or nil for now.
-func scan[T any](s *Store, relation string, asOf *int64) ([]T, error) {
-	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relation, TxAt: asOf})
+// When selects the temporal viewpoint for a read: Tx is transaction-time
+// (--as-of, "what did we know when"), Valid is valid-time (--valid-at, "what was
+// in effect when"). The zero value means now.
+type When struct {
+	Tx    *int64
+	Valid *int64
+}
+
+// Now is the present-time viewpoint.
+func Now() When { return When{} }
+
+// scan returns the facts for a relation at the given temporal viewpoint,
+// unmarshalling each args object into a fresh T.
+func scan[T any](s *Store, relation string, w When) ([]T, error) {
+	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relation, TxAt: w.Tx, ValidAt: w.Valid})
 	if err != nil {
 		return nil, fmt.Errorf("query %s: %w", relation, err)
 	}
@@ -86,56 +98,79 @@ func (s *Store) SetIssueCard(c ibis.IssueCard) error {
 
 // --- reads (filtered by discussion in Go; graphs are tiny) ---
 
-func (s *Store) Discussions(asOf *int64) ([]ibis.Discussion, error) {
-	return scan[ibis.Discussion](s, relDiscussion, asOf)
+func (s *Store) Discussions(w When) ([]ibis.Discussion, error) {
+	return scan[ibis.Discussion](s, relDiscussion, w)
 }
 
-func (s *Store) Nodes(disc string, asOf *int64) ([]ibis.Node, error) {
-	all, err := scan[ibis.Node](s, relNode, asOf)
+func (s *Store) Nodes(disc string, w When) ([]ibis.Node, error) {
+	all, err := scan[ibis.Node](s, relNode, w)
 	return filter(all, disc, func(n ibis.Node) string { return n.Disc }), err
 }
 
-func (s *Store) Links(disc string, asOf *int64) ([]ibis.Link, error) {
-	all, err := scan[ibis.Link](s, relLink, asOf)
+func (s *Store) Links(disc string, w When) ([]ibis.Link, error) {
+	all, err := scan[ibis.Link](s, relLink, w)
 	return filter(all, disc, func(l ibis.Link) string { return l.Disc }), err
 }
 
-func (s *Store) Preferences(disc string, asOf *int64) ([]ibis.Preference, error) {
-	all, err := scan[ibis.Preference](s, relPreference, asOf)
+func (s *Store) Preferences(disc string, w When) ([]ibis.Preference, error) {
+	all, err := scan[ibis.Preference](s, relPreference, w)
 	return filter(all, disc, func(p ibis.Preference) string { return p.Disc }), err
 }
 
-func (s *Store) Decisions(disc string, asOf *int64) ([]ibis.Decision, error) {
-	all, err := scan[ibis.Decision](s, relDecision, asOf)
+func (s *Store) Decisions(disc string, w When) ([]ibis.Decision, error) {
+	all, err := scan[ibis.Decision](s, relDecision, w)
 	return filter(all, disc, func(d ibis.Decision) string { return d.Disc }), err
 }
 
-// IssueCards returns cards for issues in this discussion. Cards carry no disc of
-// their own; they are matched against the discussion's issue nodes by the caller
-// via the graph. Here we return all current cards; Graph filters by issue id.
-func (s *Store) IssueCards(asOf *int64) ([]ibis.IssueCard, error) {
-	return scan[ibis.IssueCard](s, relIssueCard, asOf)
+// IssueCards returns cards at the given viewpoint. Cards carry no disc of their
+// own; Graph matches them to this discussion's issue ids by key.
+func (s *Store) IssueCards(w When) ([]ibis.IssueCard, error) {
+	return scan[ibis.IssueCard](s, relIssueCard, w)
 }
 
-// Graph loads and indexes a full discussion snapshot at asOf.
-func (s *Store) Graph(disc string, asOf *int64) (*ibis.Graph, error) {
-	nodes, err := s.Nodes(disc, asOf)
+// Graph loads and indexes a full discussion snapshot at the given viewpoint.
+// The graph uses the transaction-time axis (structure as it stood); valid-time
+// is for decisions and is read separately.
+func (s *Store) Graph(disc string, w When) (*ibis.Graph, error) {
+	gw := When{Tx: w.Tx}
+	nodes, err := s.Nodes(disc, gw)
 	if err != nil {
 		return nil, err
 	}
-	links, err := s.Links(disc, asOf)
+	links, err := s.Links(disc, gw)
 	if err != nil {
 		return nil, err
 	}
-	prefs, err := s.Preferences(disc, asOf)
+	prefs, err := s.Preferences(disc, gw)
 	if err != nil {
 		return nil, err
 	}
-	cards, err := s.IssueCards(asOf)
+	cards, err := s.IssueCards(gw)
 	if err != nil {
 		return nil, err
 	}
 	return ibis.NewGraph(nodes, links, prefs, cards), nil
+}
+
+// SupersedeDecision invalidates (closes the vt interval of) any current decision
+// on the given issue, so a fresh decide supersedes it. No-op if none stands.
+func (s *Store) SupersedeDecision(disc, issue string) error {
+	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relDecision})
+	if err != nil {
+		return fmt.Errorf("query decisions: %w", err)
+	}
+	for _, f := range facts {
+		var d ibis.Decision
+		if err := json.Unmarshal([]byte(f.Args), &d); err != nil {
+			continue
+		}
+		if d.Disc == disc && d.Issue == issue {
+			if err := s.fs.InvalidateFact(f.ID); err != nil {
+				return fmt.Errorf("invalidate prior decision on %s: %w", issue, err)
+			}
+		}
+	}
+	return nil
 }
 
 // RetractNode closes the tt interval of the current dlktk/node fact whose
@@ -168,6 +203,70 @@ func (s *Store) RetractNode(nid string) error {
 		return fmt.Errorf("retract node %s: %w", nid, err)
 	}
 	return nil
+}
+
+// HistoryEntry is one fact's transaction-time record for the audit trail.
+type HistoryEntry struct {
+	Relation  string `json:"relation"`
+	ID        string `json:"id,omitempty"`
+	Summary   string `json:"summary"`
+	Author    string `json:"author,omitempty"`
+	TxStart   int64  `json:"tx_start"`
+	TxEnd     *int64 `json:"tx_end,omitempty"`
+	Retracted bool   `json:"retracted"`
+}
+
+// History returns the transaction-time audit trail for a discussion: every
+// node/link/preference/decision fact ever recorded (including retracted), in tt
+// order. If nodeID is non-empty, only facts carrying that args.id are returned.
+func (s *Store) History(disc, nodeID string) ([]HistoryEntry, error) {
+	var out []HistoryEntry
+	for _, rel := range []string{relNode, relLink, relPreference, relDecision} {
+		facts, err := s.fs.FactHistory(rel)
+		if err != nil {
+			return nil, fmt.Errorf("history %s: %w", rel, err)
+		}
+		for _, f := range facts {
+			var m map[string]any
+			if err := json.Unmarshal([]byte(f.Args), &m); err != nil {
+				continue
+			}
+			if d, _ := m["disc"].(string); d != disc {
+				continue
+			}
+			fid, _ := m["id"].(string)
+			if nodeID != "" && fid != nodeID {
+				continue
+			}
+			out = append(out, HistoryEntry{
+				Relation:  rel,
+				ID:        fid,
+				Summary:   summarize(rel, m),
+				Author:    f.Source,
+				TxStart:   f.TxStart,
+				TxEnd:     f.TxEnd,
+				Retracted: f.TxEnd != nil,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TxStart < out[j].TxStart })
+	return out, nil
+}
+
+// summarize produces a human label for a fact's args by relation.
+func summarize(rel string, m map[string]any) string {
+	str := func(k string) string { s, _ := m[k].(string); return s }
+	switch rel {
+	case relNode:
+		return fmt.Sprintf("%s %q", str("kind"), str("text"))
+	case relLink:
+		return fmt.Sprintf("%s %s→%s", str("rel"), str("src"), str("dst"))
+	case relPreference:
+		return fmt.Sprintf("prefer %s>%s basis=%s", str("winner"), str("loser"), str("basis"))
+	case relDecision:
+		return fmt.Sprintf("decide %s→%s", str("issue"), str("position"))
+	}
+	return rel
 }
 
 func filter[T any](all []T, disc string, discOf func(T) string) []T {
