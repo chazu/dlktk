@@ -1,0 +1,8 @@
+# built binary
+/dlktk
+
+# local discussion pointer + any local pudl store
+/.dlktk/
+*.db
+*.db-wal
+*.db-shm
