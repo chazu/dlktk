@@ -3,7 +3,7 @@ module github.com/chazu/dlktk
 go 1.25.8
 
 require (
-	github.com/chazu/pudl v0.1.1
+	github.com/chazu/pudl v0.1.2
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
 )

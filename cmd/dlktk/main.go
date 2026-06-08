@@ -4,6 +4,8 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/user"
@@ -68,6 +70,7 @@ func root() *cobra.Command {
 		cmdConcede("concede"), cmdConcede("retract"),
 		cmdStatus(), cmdTree(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdDiscover(),
 		cmdReplay(), cmdLog(),
+		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(),
 	)
 	return c
 }
@@ -362,6 +365,133 @@ func cmdLog() *cobra.Command {
 				return nil
 			}
 			fmt.Print(render.LogText(entries))
+			return nil
+		},
+	}
+}
+
+func cmdExport() *cobra.Command {
+	return &cobra.Command{
+		Use:   "export",
+		Short: "dump the discussion's facts as NDJSON (git-native, re-importable)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			disc, err := resolveDisc()
+			if err != nil {
+				return err
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			recs, err := s.Export(disc)
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(os.Stdout) // NDJSON: one compact object per line
+			for _, r := range recs {
+				if err := enc.Encode(r); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func cmdImport() *cobra.Command {
+	return &cobra.Command{
+		Use:   "import <file>",
+		Short: "load an NDJSON move log (idempotent by content)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			f, err := os.Open(args[0])
+			if err != nil {
+				return fail.NotFound(args[0], "cannot open %s: %v", args[0], err)
+			}
+			defer f.Close()
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+
+			sc := bufio.NewScanner(f)
+			sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+			n := 0
+			for sc.Scan() {
+				line := strings.TrimSpace(sc.Text())
+				if line == "" {
+					continue
+				}
+				var rec store.ExportRecord
+				if err := json.Unmarshal([]byte(line), &rec); err != nil {
+					return fail.New(fail.CodeGeneric, "bad_ndjson", "line %d: %v", n+1, err)
+				}
+				if err := s.Import(rec); err != nil {
+					return err
+				}
+				n++
+			}
+			if err := sc.Err(); err != nil {
+				return err
+			}
+			if !wantJSON() {
+				fmt.Printf("imported %d facts\n", n)
+			} else {
+				out, _ := render.JSON(map[string]int{"imported": n})
+				fmt.Println(out)
+			}
+			return nil
+		},
+	}
+}
+
+func cmdSchema() *cobra.Command {
+	return &cobra.Command{
+		Use:   "schema",
+		Short: "emit the pudl/dlktk CUE schema for dlktk/* fact relations",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Print(discover.CUESchema())
+			return nil
+		},
+	}
+}
+
+func cmdAnchored() *cobra.Command {
+	return &cobra.Command{
+		Use:   "anchored <subject-substring>",
+		Short: "find discussions whose subject anchors to a code artifact",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			ds, err := s.Discussions(store.Now())
+			if err != nil {
+				return err
+			}
+			var hits []ibis.Discussion
+			for _, d := range ds {
+				if d.Subject != "" && strings.Contains(d.Subject, args[0]) {
+					hits = append(hits, d)
+				}
+			}
+			if wantJSON() {
+				out, _ := render.JSON(hits)
+				fmt.Println(out)
+				return nil
+			}
+			for _, d := range hits {
+				fmt.Printf("%s  %q  %s\n", d.ID, d.Title, d.Subject)
+			}
+			if len(hits) == 0 {
+				fmt.Println("no discussions anchored to that subject")
+			}
 			return nil
 		},
 	}

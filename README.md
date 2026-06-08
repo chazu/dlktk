@@ -2,7 +2,7 @@
 
 A lightweight, git-native CLI that records design discussions as an [IBIS](https://en.wikipedia.org/wiki/Issue-based_information_system) graph, evaluates *what currently stands* via Dung grounded semantics over a defeat relation, and exposes the whole thing through a dual human/agent interface. Storage is [pudl](https://github.com/chazu/pudl)'s bitemporal fact store.
 
-> Status: early. MVP + agent-drivable surface (design phases 1–2) implemented. See [`dlktk-design.md`](dlktk-design.md) for the full design and [`pudl-rename-plan.md`](pudl-rename-plan.md) for the storage prerequisite.
+> Status: early but functional. Design phases 1–4 implemented (MVP, agent surface, replay/postmortem, git-native export/import). See [`dlktk-design.md`](dlktk-design.md) for the full design and [`pudl-rename-plan.md`](pudl-rename-plan.md) for the storage prerequisite.
 
 ## What it does
 
@@ -29,6 +29,8 @@ dlktk status $I                 # RWLock justified
 ```
 
 Agent commands: `discover` (CUE/JSON capability schema), `agenda` (live UNDEC set), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store).
+
+Postmortem: `replay <issue> --as-of T [--diff]` (labelling as it stood at T, and what changed since), `--valid-at T` (which decisions were in force), `log [node]` (transaction-time audit trail). Git-native: `export` (NDJSON move log) / `import` (idempotent by content), `schema` (the `pudl/dlktk` CUE), `anchored <ref>` (discussions governing a code artifact).
 
 ## Build
 

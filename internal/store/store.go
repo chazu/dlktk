@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/chazu/pudl/pkg/factstore"
 
@@ -201,6 +202,93 @@ func (s *Store) RetractNode(nid string) error {
 	}
 	if err := s.fs.RetractFact(target); err != nil {
 		return fmt.Errorf("retract node %s: %w", nid, err)
+	}
+	return nil
+}
+
+// ExportRecord is one fact in the git-native NDJSON move log. ValidStart and
+// Source are preserved so re-import recomputes the same content-addressed id
+// (making import idempotent).
+type ExportRecord struct {
+	Relation   string          `json:"relation"`
+	Args       json.RawMessage `json:"args"`
+	Source     string          `json:"source,omitempty"`
+	ValidStart int64           `json:"valid_start,omitempty"`
+}
+
+// Export gathers the current (live) dlktk/* facts for a discussion as an
+// ordered record stream suitable for NDJSON dump and idempotent re-import.
+func (s *Store) Export(disc string) ([]ExportRecord, error) {
+	var recs []ExportRecord
+	issueIDs := map[string]bool{}
+
+	emit := func(rel string, keep func(map[string]any) bool) error {
+		facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: rel})
+		if err != nil {
+			return fmt.Errorf("export %s: %w", rel, err)
+		}
+		for _, f := range facts {
+			var m map[string]any
+			if err := json.Unmarshal([]byte(f.Args), &m); err != nil {
+				continue
+			}
+			if !keep(m) {
+				continue
+			}
+			if rel == relNode {
+				if k, _ := m["kind"].(string); k == string(ibis.Issue) {
+					if id, _ := m["id"].(string); id != "" {
+						issueIDs[id] = true
+					}
+				}
+			}
+			recs = append(recs, ExportRecord{
+				Relation:   rel,
+				Args:       json.RawMessage(f.Args),
+				Source:     f.Source,
+				ValidStart: f.ValidStart,
+			})
+		}
+		return nil
+	}
+
+	discIs := func(m map[string]any) bool { d, _ := m["disc"].(string); return d == disc }
+
+	if err := emit(relDiscussion, func(m map[string]any) bool { id, _ := m["id"].(string); return id == disc }); err != nil {
+		return nil, err
+	}
+	if err := emit(relNode, discIs); err != nil { // populates issueIDs
+		return nil, err
+	}
+	if err := emit(relLink, discIs); err != nil {
+		return nil, err
+	}
+	if err := emit(relPreference, discIs); err != nil {
+		return nil, err
+	}
+	if err := emit(relDecision, discIs); err != nil {
+		return nil, err
+	}
+	if err := emit(relIssueCard, func(m map[string]any) bool { i, _ := m["issue"].(string); return issueIDs[i] }); err != nil {
+		return nil, err
+	}
+	return recs, nil
+}
+
+// Import re-asserts one exported fact. Idempotent: pudl content-addresses by
+// (relation, canonical args, valid_start, source), so re-importing dedups.
+func (s *Store) Import(rec ExportRecord) error {
+	if !strings.HasPrefix(rec.Relation, "dlktk/") {
+		return fmt.Errorf("refusing to import non-dlktk relation %q", rec.Relation)
+	}
+	_, err := s.fs.AddFact(factstore.Fact{
+		Relation:   rec.Relation,
+		Args:       string(rec.Args),
+		Source:     rec.Source,
+		ValidStart: rec.ValidStart,
+	})
+	if err != nil {
+		return fmt.Errorf("import %s: %w", rec.Relation, err)
 	}
 	return nil
 }

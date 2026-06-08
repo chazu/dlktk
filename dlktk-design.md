@@ -496,6 +496,8 @@ None of these are required for the core to run standalone.
 3. **Replay/postmortem** — `replay --diff`, `--valid-at` (→ `ValidAt`), `log`, decision-supersession via `InvalidateFact`.
 4. **Git-native + integration** — `export/import` NDJSON, `catalog_entry` subject-anchoring (`pkg/eval` join), genso events, `pudl/dlktk` CUE schema registration + optional cosmetic display filter (§3.7).
 
+   *Shipped:* `export`/`import` (current-state NDJSON, idempotent by content — enabled by making pudl `AddFact` `INSERT OR IGNORE`), `schema` (emits the `pudl/dlktk` CUE package), and `anchored <subject-substring>` (the practical form of subject-anchoring: matches discussions by `subject`). *Deferred:* full-history (assert+retract) export replay; the richer `catalog_entry` datalog join, which needs an agreed `subject`↔catalog key convention (e.g. `subject: catalog:<resource_id>`) before exact-match joining is meaningful; genso events (external, optional).
+
 ---
 
 ## 16. Open questions

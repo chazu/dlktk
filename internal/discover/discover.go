@@ -104,6 +104,74 @@ func CUE() string {
 	return b.String()
 }
 
+// CUESchema renders the `pudl/dlktk` CUE package: the typed args shape of every
+// dlktk/* relation, so pudl and other tools can validate/interpret dlktk facts
+// (design §3.7). Install it under the pudl schema dir to register the package.
+func CUESchema() string {
+	return `package dlktk
+
+// Args schemas for the dlktk/* fact relations. The fact's relation name selects
+// the schema; the fact's args object must unify with it.
+
+#Discussion: {
+	id:         string
+	title:      string
+	subject:    string // file:… | pkg:… | commit:… | q:…
+	created_by: string
+}
+
+#Node: {
+	id:     string
+	disc:   string
+	kind:   "issue" | "position" | "argument"
+	text:   string
+	author: string
+}
+
+#Link: {
+	id:     string
+	disc:   string
+	src:    string
+	dst:    string
+	rel:    "responds_to" | "supports" | "objects_to"
+	author: string
+}
+
+#IssueCard: {
+	issue:       string
+	cardinality: "select_one" | "open"
+}
+
+#Preference: {
+	id:     string
+	disc:   string
+	winner: string
+	loser:  string
+	basis:  string
+	author: string
+}
+
+#Decision: {
+	disc:     string
+	issue:    string
+	position: string
+	basis:    string
+	decider:  string
+	override: bool
+}
+
+// relation -> schema binding
+#byRelation: {
+	"dlktk/discussion": #Discussion
+	"dlktk/node":       #Node
+	"dlktk/link":       #Link
+	"dlktk/issue_card": #IssueCard
+	"dlktk/preference": #Preference
+	"dlktk/decision":   #Decision
+}
+`
+}
+
 func cueList(xs []string) string {
 	if len(xs) == 0 {
 		return "[]"
