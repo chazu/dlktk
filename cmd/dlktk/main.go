@@ -317,8 +317,12 @@ func cmdReplay() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			issues, err := targetIssues(gThen, args)
+			if err != nil {
+				return err
+			}
 			var views []render.IssueStatus
-			for _, iss := range targetIssues(gThen, args) {
+			for _, iss := range issues {
 				views = append(views, render.Status(gThen, fwThen, lThen, iss, decs))
 			}
 			if wantJSON() {
@@ -758,7 +762,10 @@ func cmdStatus() *cobra.Command {
 			fw := af.Build(g)
 			labels := fw.Grounded()
 
-			issues := targetIssues(g, args)
+			issues, err := targetIssues(g, args)
+			if err != nil {
+				return err
+			}
 			var views []render.IssueStatus
 			for _, iss := range issues {
 				views = append(views, render.Status(g, fw, labels, iss, decs))
@@ -804,6 +811,9 @@ func cmdTree() *cobra.Command {
 			}
 			issue := ""
 			if len(args) == 1 {
+				if n, ok := g.Nodes[args[0]]; !ok || n.Kind != ibis.Issue {
+					return fail.NotFound(args[0], "issue %q not found", args[0])
+				}
 				issue = args[0]
 			}
 			fmt.Print(render.Tree(g, issue))
@@ -826,9 +836,12 @@ func withMover(fn func(disc string, m *proto.Mover) error) error {
 	return fn(disc, mover(s))
 }
 
-func targetIssues(g *ibis.Graph, args []string) []string {
+func targetIssues(g *ibis.Graph, args []string) ([]string, error) {
 	if len(args) == 1 {
-		return []string{args[0]}
+		if n, ok := g.Nodes[args[0]]; !ok || n.Kind != ibis.Issue {
+			return nil, fail.NotFound(args[0], "issue %q not found", args[0])
+		}
+		return []string{args[0]}, nil
 	}
 	var issues []string
 	for id, n := range g.Nodes {
@@ -836,5 +849,5 @@ func targetIssues(g *ibis.Graph, args []string) []string {
 			issues = append(issues, id)
 		}
 	}
-	return issues
+	return issues, nil
 }
