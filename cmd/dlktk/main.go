@@ -637,14 +637,19 @@ func cmdList() *cobra.Command {
 // --- move commands ---
 
 func cmdRaise() *cobra.Command {
-	var parent string
+	var parent, card string
 	c := &cobra.Command{
 		Use:   "raise <text>",
 		Short: "raise an issue",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			switch card {
+			case "", string(ibis.SelectOne), string(ibis.Open):
+			default:
+				return fail.New(fail.CodeIllegal, "bad_cardinality", "--card must be %q or %q, got %q", ibis.SelectOne, ibis.Open, card)
+			}
 			return withMover(func(disc string, m *proto.Mover) error {
-				idv, err := m.Raise(disc, args[0], parent)
+				idv, err := m.Raise(disc, args[0], parent, ibis.Cardinality(card))
 				if err != nil {
 					return err
 				}
@@ -654,6 +659,7 @@ func cmdRaise() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&parent, "parent", "", "parent issue id")
+	c.Flags().StringVar(&card, "card", "", "cardinality: select_one (default) or open; fixed at creation")
 	return c
 }
 

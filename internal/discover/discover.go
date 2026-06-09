@@ -6,11 +6,13 @@ package discover
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
 
-// Version of the dlktk contract.
-const Version = "0.2.0"
+// Version of the dlktk contract. 0.3.0 adds globals, errors, the error envelope,
+// per-read output envelopes, and the raise --card flag.
+const Version = "0.3.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -20,23 +22,43 @@ type Move struct {
 	Mutates  bool     `json:"mutates"`
 }
 
-// Read describes a non-mutating command.
+// Read describes a non-mutating command. Output names the JSON envelope returned
+// under --format json (see Schema.Envelopes); "text" means human-only output.
 type Read struct {
 	Name    string   `json:"name"`
 	Args    []string `json:"args"`
+	Output  string   `json:"output"`
 	Mutates bool     `json:"mutates"`
+}
+
+// Flag is a global flag accepted by every command.
+type Flag struct {
+	Name string `json:"name"`
+	Desc string `json:"desc"`
+}
+
+// ErrCode maps an exit code to its error kind and meaning. The error envelope
+// (ErrorEnvelope) carries the matching `error` (kind) string.
+type ErrCode struct {
+	Code    int    `json:"code"`
+	Kind    string `json:"kind"`
+	Meaning string `json:"meaning"`
 }
 
 // Schema is the full capability contract.
 type Schema struct {
-	Tool    string   `json:"tool"`
-	Version string   `json:"version"`
-	IDs     string   `json:"ids"`
-	Kinds   []string `json:"kinds"`
-	Rels    []string `json:"rels"`
-	Labels  []string `json:"labels"`
-	Moves   []Move   `json:"moves"`
-	Reads   []Read   `json:"reads"`
+	Tool          string            `json:"tool"`
+	Version       string            `json:"version"`
+	IDs           string            `json:"ids"`
+	Kinds         []string          `json:"kinds"`
+	Rels          []string          `json:"rels"`
+	Labels        []string          `json:"labels"`
+	Globals       []Flag            `json:"globals"`
+	Moves         []Move            `json:"moves"`
+	Reads         []Read            `json:"reads"`
+	Errors        []ErrCode         `json:"errors"`
+	ErrorEnvelope string            `json:"error_envelope"`
+	Envelopes     map[string]string `json:"envelopes"`
 }
 
 // Current returns the capability schema for this build.
@@ -48,8 +70,16 @@ func Current() Schema {
 		Kinds:   []string{"issue", "position", "argument"},
 		Rels:    []string{"responds_to", "supports", "objects_to"},
 		Labels:  []string{"IN", "OUT", "UNDEC"},
+		Globals: []Flag{
+			{"--format text|json", "output format (json gives the envelopes below)"},
+			{"--discussion|-d id", "target discussion (else $DLKTK_DISC, else ./.dlktk/current)"},
+			{"--role name", "author/role attribution for moves (default: OS user)"},
+			{"--as-of T", "transaction-time travel: evaluate as of T (RFC3339 or Unix seconds)"},
+			{"--valid-at T", "valid-time: which decisions were in force at T"},
+			{"--store dir", "pudl store dir (default: repo .pudl/ else ~/.pudl)"},
+		},
 		Moves: []Move{
-			{"raise", []string{"text", "[--parent issue]"}, "parent must be an issue", true},
+			{"raise", []string{"text", "[--parent issue]", "[--card select_one|open]"}, "parent must be an issue; cardinality fixed at creation, default select_one", true},
 			{"propose", []string{"issue", "text"}, "target must be an issue", true},
 			{"support", []string{"target", "text"}, "target in {position,argument}", true},
 			{"object", []string{"target", "text"}, "target in {position,argument}", true},
@@ -59,14 +89,29 @@ func Current() Schema {
 			{"retract", []string{"node"}, "author owns the node", true},
 		},
 		Reads: []Read{
-			{"status", []string{"[issue]"}, false},
-			{"agenda", nil, false},
-			{"moves", []string{"issue"}, false},
-			{"why", []string{"node"}, false},
-			{"explain", []string{"issue"}, false},
-			{"tree", []string{"[issue]"}, false},
-			{"list", nil, false},
-			{"discover", nil, false},
+			{"status", []string{"[issue]"}, "[IssueStatus]", false},
+			{"agenda", nil, "AgendaView", false},
+			{"moves", []string{"issue"}, "MovesView", false},
+			{"why", []string{"node"}, "WhyView", false},
+			{"explain", []string{"issue"}, "ExplainView", false},
+			{"tree", []string{"[issue]"}, "text", false},
+			{"list", nil, "[Discussion]", false},
+			{"discover", nil, "Schema (this document)", false},
+		},
+		Errors: []ErrCode{
+			{1, "generic", "unspecified failure"},
+			{2, "illegal_move", "ill-formed or illegal move; nothing was written"},
+			{3, "not_found", "a referenced discussion/issue/node id does not exist"},
+			{4, "store_error", "storage or engine failure"},
+		},
+		ErrorEnvelope: "{error: kind, detail: string, node?: id}",
+		Envelopes: map[string]string{
+			"IssueStatus": "{issue, issue_text, cardinality, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool}], undecided: [id], stalemate: bool, advice, decided?: {position, basis, decider, override}}",
+			"AgendaView":  "{undecided: [{id, kind, text, label}]}",
+			"MovesView":   "{issue, moves: [{move, args: [string], effect}]}",
+			"WhyView":     "{node, label, because: [{attacker, attacker_label, reason}], to_flip: [{move, args: [string], effect}]}",
+			"ExplainView": "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override}, decision_is_in: bool}",
+			"Discussion":  "{id, title, subject, created_by}",
 		},
 	}
 }
@@ -91,6 +136,11 @@ func CUE() string {
 	fmt.Fprintf(&b, "\tkinds:   %s\n", cueList(s.Kinds))
 	fmt.Fprintf(&b, "\trels:    %s\n", cueList(s.Rels))
 	fmt.Fprintf(&b, "\tlabels:  %s\n", cueList(s.Labels))
+	b.WriteString("\tglobals: [\n")
+	for _, f := range s.Globals {
+		fmt.Fprintf(&b, "\t\t{name: %q, desc: %q},\n", f.Name, f.Desc)
+	}
+	b.WriteString("\t]\n")
 	b.WriteString("\tmoves: [\n")
 	for _, m := range s.Moves {
 		fmt.Fprintf(&b, "\t\t{name: %q, args: %s, legality: %q, mutates: true},\n", m.Name, cueList(m.Args), m.Legality)
@@ -98,11 +148,31 @@ func CUE() string {
 	b.WriteString("\t]\n")
 	b.WriteString("\treads: [\n")
 	for _, r := range s.Reads {
-		fmt.Fprintf(&b, "\t\t{name: %q, args: %s, mutates: false},\n", r.Name, cueList(r.Args))
+		fmt.Fprintf(&b, "\t\t{name: %q, args: %s, output: %q, mutates: false},\n", r.Name, cueList(r.Args), r.Output)
 	}
 	b.WriteString("\t]\n")
+	b.WriteString("\terrors: [\n")
+	for _, e := range s.Errors {
+		fmt.Fprintf(&b, "\t\t{code: %d, kind: %q, meaning: %q},\n", e.Code, e.Kind, e.Meaning)
+	}
+	b.WriteString("\t]\n")
+	fmt.Fprintf(&b, "\terror_envelope: %q\n", s.ErrorEnvelope)
+	b.WriteString("\tenvelopes: {\n")
+	for _, name := range sortedKeys(s.Envelopes) {
+		fmt.Fprintf(&b, "\t\t%q: %q\n", name, s.Envelopes[name])
+	}
+	b.WriteString("\t}\n")
 	b.WriteString("}\n")
 	return b.String()
+}
+
+func sortedKeys(m map[string]string) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	sort.Strings(ks)
+	return ks
 }
 
 // CUESchema renders the `pudl/dlktk` CUE package: the typed args shape of every

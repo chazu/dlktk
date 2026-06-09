@@ -19,9 +19,10 @@ type Mover struct {
 // New returns a Mover writing as author.
 func New(s *store.Store, author string) *Mover { return &Mover{s: s, author: author} }
 
-// Raise adds an issue, optionally responding to a parent issue, with default
-// select_one cardinality. Returns the new issue id.
-func (m *Mover) Raise(disc, text, parent string) (string, error) {
+// Raise adds an issue, optionally responding to a parent issue, with the given
+// cardinality (empty defaults to select_one). Cardinality is fixed at creation
+// (design §16 Q7). Returns the new issue id.
+func (m *Mover) Raise(disc, text, parent string, card ibis.Cardinality) (string, error) {
 	g, err := m.s.Graph(disc, store.Now())
 	if err != nil {
 		return "", err
@@ -29,11 +30,14 @@ func (m *Mover) Raise(disc, text, parent string) (string, error) {
 	if err := g.CanRaise(parent); err != nil {
 		return "", err
 	}
+	if card == "" {
+		card = ibis.SelectOne
+	}
 	nid := id.New()
 	if err := m.s.AddNode(ibis.Node{ID: nid, Disc: disc, Kind: ibis.Issue, Text: text, Author: m.author}); err != nil {
 		return "", err
 	}
-	if err := m.s.SetIssueCard(ibis.IssueCard{Issue: nid, Cardinality: ibis.SelectOne}); err != nil {
+	if err := m.s.SetIssueCard(ibis.IssueCard{Issue: nid, Cardinality: card}); err != nil {
 		return "", err
 	}
 	if parent != "" {
