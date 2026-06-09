@@ -3,7 +3,11 @@
 // transitive preference, defeat, and the grounded fixpoint. No storage, no CLI.
 package af
 
-import "github.com/chazu/dlktk/internal/ibis"
+import (
+	"sort"
+
+	"github.com/chazu/dlktk/internal/ibis"
+)
 
 // Label is the three-valued grounded label.
 type Label string
@@ -121,6 +125,91 @@ func (f *Framework) Grounded() map[string]Label {
 		}
 	}
 	return label
+}
+
+// Step records one node's grounded labelling, with the round it was decided in
+// and why. Rounds are layered (BFS over the defeat relation): every node decided
+// in round N used only labels settled by round N-1, which makes the derivation
+// legible. The final labelling equals Grounded()'s (the grounded extension is
+// unique), only the assignment order is made explicit.
+type Step struct {
+	Round int      `json:"round"`
+	Node  string   `json:"node"`
+	Label Label    `json:"label"`
+	Why   string   `json:"why"` // unattacked | reinstated | defeated | contested
+	By    []string `json:"by"`  // relevant defeaters (IN for defeated, OUT for reinstated, UNDEC for contested)
+}
+
+// GroundedSteps computes the grounded labelling and a layered trace of how each
+// node got its label. Use it to explain the automated reasoning; use Grounded()
+// when only the result is needed.
+func (f *Framework) GroundedSteps() ([]Step, map[string]Label) {
+	attackers := map[string][]string{}
+	for _, d := range f.Defeat {
+		attackers[d.To] = append(attackers[d.To], d.From)
+	}
+	args := append([]string{}, f.Args...)
+	sort.Strings(args)
+
+	label := make(map[string]Label, len(args))
+	for _, a := range args {
+		label[a] = UNDEC
+	}
+
+	var steps []Step
+	round := 0
+	for {
+		round++
+		var assigned []Step
+		for _, a := range args {
+			if label[a] != UNDEC {
+				continue
+			}
+			allOut, anyIn := true, false
+			var inBy, outBy []string
+			for _, b := range attackers[a] {
+				switch label[b] {
+				case IN:
+					anyIn, allOut = true, false
+					inBy = append(inBy, b)
+				case UNDEC:
+					allOut = false
+				case OUT:
+					outBy = append(outBy, b)
+				}
+			}
+			switch {
+			case allOut:
+				why := "unattacked"
+				if len(attackers[a]) > 0 {
+					why = "reinstated"
+				}
+				assigned = append(assigned, Step{Round: round, Node: a, Label: IN, Why: why, By: outBy})
+			case anyIn:
+				assigned = append(assigned, Step{Round: round, Node: a, Label: OUT, Why: "defeated", By: inBy})
+			}
+		}
+		if len(assigned) == 0 {
+			break
+		}
+		for _, s := range assigned {
+			label[s.Node] = s.Label
+			steps = append(steps, s)
+		}
+	}
+	// Whatever is still UNDEC sits in an unresolved attack cycle / mutual stalemate.
+	for _, a := range args {
+		if label[a] == UNDEC {
+			var by []string
+			for _, b := range attackers[a] {
+				if label[b] == UNDEC {
+					by = append(by, b)
+				}
+			}
+			steps = append(steps, Step{Round: round, Node: a, Label: UNDEC, Why: "contested", By: by})
+		}
+	}
+	return steps, label
 }
 
 // closure returns the reflexive-free transitive closure of the preference

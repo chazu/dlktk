@@ -2,7 +2,7 @@
 
 A lightweight, git-native CLI that records design discussions as an [IBIS](https://en.wikipedia.org/wiki/Issue-based_information_system) graph, evaluates *what currently stands* via Dung grounded semantics over a defeat relation, and exposes the whole thing through a dual human/agent interface. Storage is [pudl](https://github.com/chazu/pudl)'s bitemporal fact store.
 
-> Status: early but functional. Design phases 1–4 implemented (MVP, agent surface, replay/postmortem, git-native export/import). See [`dlktk-design.md`](dlktk-design.md) for the full design and [`pudl-rename-plan.md`](pudl-rename-plan.md) for the storage prerequisite.
+> Status: early but functional. Design phases 1–4 implemented (MVP, agent surface, replay/postmortem, git-native export/import). See [`dlktk-design.md`](dlktk-design.md) for the full design.
 
 ## What it does
 
@@ -28,19 +28,36 @@ dlktk prefer $B $A --basis throughput
 dlktk status $I                 # RWLock justified
 ```
 
-Agent commands: `discover` (CUE/JSON capability schema), `agenda` (live UNDEC set), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store).
+Agent commands: `discover` (CUE/JSON capability schema), `agenda` (live UNDEC set), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it), `explain <issue>` (full derivation: how attacks/defeats were built and the round-by-round grounded fixpoint that produced the labelling). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store).
 
 Postmortem: `replay <issue> --as-of T [--diff]` (labelling as it stood at T, and what changed since), `--valid-at T` (which decisions were in force), `log [node]` (transaction-time audit trail). Git-native: `export` (NDJSON move log) / `import` (idempotent by content), `schema` (the `pudl/dlktk` CUE), `anchored <ref>` (discussions governing a code artifact).
 
 ## Build
 
-dlktk depends on pudl. During co-development `go.mod` uses a local `replace github.com/chazu/pudl => ../pudl`, so clone both side by side:
+dlktk pins a tagged `github.com/chazu/pudl` release in `go.mod`, so a plain clone builds reproducibly with no sibling checkout:
+
+```
+git clone https://github.com/chazu/dlktk
+cd dlktk && go build ./...
+```
+
+To co-develop pudl and dlktk together, clone both side by side and use a local (git-ignored) Go workspace — it overrides the pin with your local pudl without touching `go.mod`:
 
 ```
 git clone https://github.com/chazu/pudl
 git clone https://github.com/chazu/dlktk
-cd dlktk && go build ./...
+cd dlktk
+cat > go.work <<'EOF'
+go 1.25.8
+use (
+	.
+	../pudl
+)
+EOF
+go build ./...        # uses ../pudl; GOWORK=off builds the pinned release
 ```
+
+Bump the pin deliberately with `go get github.com/chazu/pudl@latest` (design §16 Q1).
 
 ## License
 

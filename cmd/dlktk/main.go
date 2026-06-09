@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/unix"
 
 	"github.com/chazu/dlktk/internal/af"
 	"github.com/chazu/dlktk/internal/discover"
@@ -68,7 +69,7 @@ func root() *cobra.Command {
 		cmdNew(), cmdUse(), cmdList(),
 		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(),
 		cmdConcede("concede"), cmdConcede("retract"),
-		cmdStatus(), cmdTree(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdDiscover(),
+		cmdStatus(), cmdTree(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
 		cmdReplay(), cmdLog(),
 		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(),
 	)
@@ -263,6 +264,51 @@ func cmdWhy() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func cmdExplain() *cobra.Command {
+	var brief bool
+	c := &cobra.Command{
+		Use:   "explain <issue>",
+		Short: "trace how an issue's labelling was derived (the automated reasoning)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			disc, err := resolveDisc()
+			if err != nil {
+				return err
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			w, err := when()
+			if err != nil {
+				return err
+			}
+			g, err := s.Graph(disc, w)
+			if err != nil {
+				return err
+			}
+			if n, ok := g.Nodes[args[0]]; !ok || n.Kind != ibis.Issue {
+				return fail.NotFound(args[0], "issue %q not found", args[0])
+			}
+			decs, err := s.Decisions(disc, w)
+			if err != nil {
+				return err
+			}
+			v := render.Explain(g, af.Build(g), args[0], decs)
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.ExplainText(v, brief))
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&brief, "brief", false, "omit the conceptual primer; show only the trace and outcome")
+	return c
 }
 
 func cmdReplay() *cobra.Command {
@@ -787,7 +833,8 @@ func cmdStatus() *cobra.Command {
 }
 
 func cmdTree() *cobra.Command {
-	return &cobra.Command{
+	var opts render.TreeOpts
+	c := &cobra.Command{
 		Use:   "tree [issue]",
 		Short: "the IBIS graph, indented",
 		Args:  cobra.MaximumNArgs(1),
@@ -816,10 +863,49 @@ func cmdTree() *cobra.Command {
 				}
 				issue = args[0]
 			}
-			fmt.Print(render.Tree(g, issue))
+			if opts.Width == 0 {
+				opts.Width = termWidth()
+			}
+			// Decisions are always shown (the ★/decided marker); the grounded
+			// labelling is only computed for the --labels view.
+			decs, err := s.Decisions(disc, w)
+			if err != nil {
+				return err
+			}
+			var fw *af.Framework
+			var labels map[string]af.Label
+			if opts.Labels {
+				fw = af.Build(g)
+				labels = fw.Grounded()
+			}
+			fmt.Print(render.Tree(g, issue, opts, fw, labels, decs))
 			return nil
 		},
 	}
+	f := c.Flags()
+	f.BoolVar(&opts.Labels, "labels", false, "annotate with grounded label (IN/OUT/UNDEC) and ↩ reinstated marks")
+	f.BoolVar(&opts.Authors, "authors", false, "show each node's author")
+	f.BoolVar(&opts.ASCII, "ascii", false, "ASCII connectors/glyphs instead of Unicode")
+	f.BoolVar(&opts.NoWrap, "no-wrap", false, "one truncated line per node (dense overview) instead of wrapping full text")
+	f.BoolVar(&opts.NoIDs, "no-ids", false, "omit node id suffixes")
+	f.BoolVar(&opts.NoLegend, "no-legend", false, "suppress the glyph legend header")
+	f.IntVar(&opts.Width, "width", 0, "max line width (0 = autodetect terminal)")
+	return c
+}
+
+// termWidth reports the terminal width for text wrapping. It queries the
+// controlling tty (stdout) directly — interactive shells usually do not export
+// $COLUMNS to children — then falls back to $COLUMNS, then 100.
+func termWidth() int {
+	if ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ); err == nil && ws.Col > 0 {
+		return int(ws.Col)
+	}
+	if c := os.Getenv("COLUMNS"); c != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(c)); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 100
 }
 
 // withMover resolves the discussion, opens the store, and runs fn with a Mover.

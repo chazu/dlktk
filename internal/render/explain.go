@@ -265,6 +265,251 @@ func LogText(entries []store.HistoryEntry) string {
 	return b.String()
 }
 
+// AttackView is one edge of the materialized attack relation, tagged with where
+// it came from and whether a preference neutralized it.
+type AttackView struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Source  string `json:"source"`          // "objection" | "select_one"
+	Defeats bool   `json:"defeats"`         // false if a preference blocks the attack
+	Basis   string `json:"basis,omitempty"` // preference basis when blocked
+}
+
+// PrefView is one preference edge (asserted or derived by transitivity).
+type PrefView struct {
+	Winner  string `json:"winner"`
+	Loser   string `json:"loser"`
+	Basis   string `json:"basis,omitempty"`
+	Derived bool   `json:"derived"`
+}
+
+// StepView is one labelling step in the grounded derivation.
+type StepView struct {
+	Round int      `json:"round"`
+	Node  string   `json:"node"`
+	Label string   `json:"label"`
+	Why   string   `json:"why"`
+	By    []string `json:"by,omitempty"`
+}
+
+// ExplainView is the full derivation of an issue's automated labelling (design §8.3).
+type ExplainView struct {
+	Issue        string         `json:"issue"`
+	IssueText    string         `json:"issue_text"`
+	Cardinality  string         `json:"cardinality"`
+	Attacks      []AttackView   `json:"attacks"`
+	Preferences  []PrefView     `json:"preferences"`
+	Steps        []StepView     `json:"steps"`
+	Outcome      []PositionView `json:"outcome"`
+	Decided      *DecidedView   `json:"decided,omitempty"`
+	DecisionIsIN bool           `json:"decision_is_in"` // recorded decision matches the justified (IN) position
+
+	kinds map[string]ibis.Kind // id -> kind, for prefixing ids in text (not serialized)
+}
+
+// Explain derives the full reasoning for one issue: how attacks/defeats were
+// constructed, the round-by-round grounded fixpoint, and the outcome vs any
+// recorded decision. Restricted to the AF nodes reachable from the issue.
+func Explain(g *ibis.Graph, fw *af.Framework, issue string, decs []ibis.Decision) ExplainView {
+	card := string(g.IssueCards[issue])
+	if card == "" {
+		card = string(ibis.SelectOne)
+	}
+	v := ExplainView{Issue: issue, IssueText: g.Nodes[issue].Text, Cardinality: card, kinds: map[string]ibis.Kind{}}
+
+	// Scope: AF nodes reachable upward from this issue's positions.
+	scope := reachableAF(g, issue)
+	for id := range scope {
+		v.kinds[id] = g.Nodes[id].Kind
+	}
+
+	// Attacks, tagged by origin and preference outcome.
+	defeat := map[[2]string]bool{}
+	for _, e := range fw.Defeat {
+		defeat[[2]string{e.From, e.To}] = true
+	}
+	for _, e := range fw.Attack {
+		if !scope[e.From] || !scope[e.To] {
+			continue
+		}
+		av := AttackView{From: e.From, To: e.To, Source: "select_one", Defeats: defeat[[2]string{e.From, e.To}]}
+		for _, l := range g.Links {
+			if l.Rel == ibis.ObjectsTo && l.Src == e.From && l.Dst == e.To {
+				av.Source = "objection"
+				break
+			}
+		}
+		if !av.Defeats {
+			av.Basis = basisOf(g, e.To, e.From)
+		}
+		v.Attacks = append(v.Attacks, av)
+	}
+	sort.Slice(v.Attacks, func(i, j int) bool {
+		if v.Attacks[i].From != v.Attacks[j].From {
+			return v.Attacks[i].From < v.Attacks[j].From
+		}
+		return v.Attacks[i].To < v.Attacks[j].To
+	})
+
+	// Preferences: asserted edges, then closure-only (derived) edges.
+	asserted := map[[2]string]bool{}
+	for _, p := range g.Preferences {
+		if !scope[p.Winner] || !scope[p.Loser] {
+			continue
+		}
+		asserted[[2]string{p.Winner, p.Loser}] = true
+		v.Preferences = append(v.Preferences, PrefView{Winner: p.Winner, Loser: p.Loser, Basis: p.Basis})
+	}
+	for pair := range fw.Preferred {
+		if asserted[pair] || !scope[pair[0]] || !scope[pair[1]] {
+			continue
+		}
+		v.Preferences = append(v.Preferences, PrefView{Winner: pair[0], Loser: pair[1], Derived: true})
+	}
+	sort.Slice(v.Preferences, func(i, j int) bool {
+		if v.Preferences[i].Winner != v.Preferences[j].Winner {
+			return v.Preferences[i].Winner < v.Preferences[j].Winner
+		}
+		return v.Preferences[i].Loser < v.Preferences[j].Loser
+	})
+
+	// Grounded derivation, scoped.
+	steps, labels := fw.GroundedSteps()
+	for _, s := range steps {
+		if !scope[s.Node] {
+			continue
+		}
+		v.Steps = append(v.Steps, StepView{Round: s.Round, Node: s.Node, Label: string(s.Label), Why: s.Why, By: s.By})
+	}
+
+	// Outcome: each position's final label.
+	for _, p := range positionsFor(g, issue) {
+		v.Outcome = append(v.Outcome, PositionView{ID: p, Text: g.Nodes[p].Text, Label: string(labels[p])})
+	}
+	for _, d := range decs {
+		if d.Issue == issue {
+			v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override}
+			v.DecisionIsIN = labels[d.Position] == af.IN
+		}
+	}
+	return v
+}
+
+// reachableAF returns the set of AF nodes reachable upward (Dst<-Src over any
+// IBIS relation) from an issue's positions.
+func reachableAF(g *ibis.Graph, issue string) map[string]bool {
+	seen := map[string]bool{}
+	stack := append([]string{}, positionsFor(g, issue)...)
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[cur] {
+			continue
+		}
+		seen[cur] = true
+		for _, l := range g.Links {
+			if l.Dst == cur && g.IsAFNode(l.Src) {
+				stack = append(stack, l.Src)
+			}
+		}
+	}
+	return seen
+}
+
+// ExplainText renders an ExplainView as human text. When brief, the conceptual
+// primer is omitted.
+func ExplainText(v ExplainView, brief bool) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "explain %s%s  %q  [%s]\n", ibis.PrefixFor(ibis.Issue), v.Issue, v.IssueText, v.Cardinality)
+	if !brief {
+		b.WriteString("\nhow this resolves — Dung grounded semantics:\n")
+		b.WriteString("  objections and select_one rivalry become ATTACKS; a preference can DEFEAT\n")
+		b.WriteString("  (neutralize) an attack; then a fixpoint labels each node IN (justified) /\n")
+		b.WriteString("  OUT (defeated) / UNDEC (contested). Positions left IN are the standing answer.\n")
+	}
+
+	pre := func(id string) string { return ibis.PrefixFor(v.kinds[id]) + id }
+	preList := func(ids []string) string {
+		out := make([]string, len(ids))
+		for i, id := range ids {
+			out[i] = pre(id)
+		}
+		return strings.Join(out, ", ")
+	}
+
+	b.WriteString("\n1. attacks derived:\n")
+	if len(v.Attacks) == 0 {
+		b.WriteString("   (none — no objections or select_one rivalry)\n")
+	}
+	for _, a := range v.Attacks {
+		note := a.Source
+		if !a.Defeats {
+			note += ", neutralized by preference"
+			if a.Basis != "" {
+				note += " (basis=" + a.Basis + ")"
+			}
+		}
+		fmt.Fprintf(&b, "   %s ⚔ %s  (%s)\n", pre(a.From), pre(a.To), note)
+	}
+	if len(v.Preferences) == 0 {
+		b.WriteString("   preferences: none → every attack is a defeat\n")
+	} else {
+		b.WriteString("   preferences:\n")
+		for _, p := range v.Preferences {
+			tag := ""
+			if p.Derived {
+				tag = " (derived by transitivity)"
+			} else if p.Basis != "" {
+				tag = " (basis=" + p.Basis + ")"
+			}
+			fmt.Fprintf(&b, "     %s ≻ %s%s\n", pre(p.Winner), pre(p.Loser), tag)
+		}
+	}
+
+	b.WriteString("\n2. automated reasoning — grounded fixpoint:\n")
+	round := 0
+	for _, s := range v.Steps {
+		if s.Round != round {
+			round = s.Round
+			fmt.Fprintf(&b, "   round %d:\n", round)
+		}
+		var reason string
+		switch s.Why {
+		case "unattacked":
+			reason = "no defeaters"
+		case "reinstated":
+			reason = "reinstated — defeater(s) " + preList(s.By) + " now OUT"
+		case "defeated":
+			reason = "defeated by " + preList(s.By) + " [IN]"
+		case "contested":
+			reason = "contested — unresolved cycle/stalemate with " + preList(s.By)
+		default:
+			reason = s.Why
+		}
+		fmt.Fprintf(&b, "     %-5s %s  (%s)\n", s.Label, pre(s.Node), reason)
+	}
+	if len(v.Steps) == 0 {
+		b.WriteString("   (no positions or arguments yet)\n")
+	}
+
+	b.WriteString("\n3. outcome:\n")
+	for _, p := range v.Outcome {
+		marker := ""
+		if p.Label == "IN" {
+			marker = "  ← justified"
+		}
+		fmt.Fprintf(&b, "   %-5s %s%s  %q\n", p.Label, ibis.PrefixFor(ibis.Position)+p.ID, marker, p.Text)
+	}
+	if v.Decided != nil {
+		if v.DecisionIsIN {
+			fmt.Fprintf(&b, "   ✓ decision recorded: %s (matches the justified position)\n", ibis.PrefixFor(ibis.Position)+v.Decided.Position)
+		} else {
+			fmt.Fprintf(&b, "   ⚠ decision recorded: %s (OVERRIDE — not the justified position)\n", ibis.PrefixFor(ibis.Position)+v.Decided.Position)
+		}
+	}
+	return b.String()
+}
+
 func attackersOf(fw *af.Framework, node string) []string {
 	var out []string
 	seen := map[string]bool{}

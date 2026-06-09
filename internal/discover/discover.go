@@ -63,6 +63,7 @@ func Current() Schema {
 			{"agenda", nil, false},
 			{"moves", []string{"issue"}, false},
 			{"why", []string{"node"}, false},
+			{"explain", []string{"issue"}, false},
 			{"tree", []string{"[issue]"}, false},
 			{"list", nil, false},
 			{"discover", nil, false},
