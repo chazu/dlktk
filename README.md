@@ -30,9 +30,19 @@ dlktk prefer $B $A --basis throughput
 dlktk status $I                 # RWLock justified
 ```
 
-Agent commands: `discover` (CUE/JSON capability schema), `agenda` (live UNDEC set), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it), `explain <issue>` (full derivation: how attacks/defeats were built and the round-by-round grounded fixpoint that produced the labelling). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store).
+Agent commands: `discover` (CUE/JSON capability schema), `agenda` (live UNDEC set), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it), `explain <issue>` (full derivation: how attacks/defeats were built and the round-by-round grounded fixpoint that produced the labelling). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store, `5` check-failed).
 
-Postmortem: `replay <issue> --as-of T [--diff]` (labelling as it stood at T, and what changed since), `--valid-at T` (which decisions were in force), `log [node]` (transaction-time audit trail). Git-native: `export` (NDJSON move log) / `import` (idempotent by content), `schema` (the `pudl/dlktk` CUE), `anchored <ref>` (discussions governing a code artifact).
+Decisions are closing acts: a bare re-`decide` on a decided issue is rejected; overturning one is `supersede <issue> <position> --basis <label>`, which records why and links the prior decision.
+
+Postmortem: `replay <issue> --as-of T [--diff]` (labelling as it stood at T, and what changed since), `--valid-at T` (which decisions were in force), `log [node]` (transaction-time audit trail). Git-native: `export` (NDJSON move log; `--history` adds retract/invalidate events so the full audit trail replays) / `import` (validated, idempotent by content), `schema` (the `pudl/dlktk` CUE), `anchored <ref>` (discussions governing a code artifact).
+
+MCP: `dlktk mcp` serves the same verb set over the Model Context Protocol (stdio) — one tool per move/read, returning the identical JSON envelopes — so any MCP-capable agent harness can drive a dialectic without shelling out. Moves are serialized in-process, which also closes the legality-check/write race concurrent CLI invocations have. Example client config:
+
+```json
+{"mcpServers": {"dlktk": {"command": "dlktk", "args": ["mcp", "--store", "/path/to/repo/.pudl"]}}}
+```
+
+CI: `check [--all] [--strict]` verifies that recorded decisions still stand — exit 5 when a decided position is no longer justified (the dialectic moved out from under it), when stored preferences are cyclic, or when store invariants are violated; `--strict` also fails on lingering stalemates. Run it in CI so decisions stay living constraints — this repo's own workflow drift-checks the `examples/` dialectics on every PR.
 
 ## Build
 

@@ -2,6 +2,8 @@
 // move-legality rules (part of L4). It knows nothing of storage or the CLI.
 package ibis
 
+import "sort"
+
 // Kind enumerates node kinds.
 type Kind string
 
@@ -59,13 +61,17 @@ type Preference struct {
 }
 
 // Decision records the act of closing an issue by accepting a position.
+// Supersedes names the previously decided position when this decision was made
+// with the supersede move (design §16 Q4: overturning requires a recorded basis
+// and a link back; a bare re-decide is rejected).
 type Decision struct {
-	Disc     string `json:"disc"`
-	Issue    string `json:"issue"`
-	Position string `json:"position"`
-	Basis    string `json:"basis"`
-	Decider  string `json:"decider"`
-	Override bool   `json:"override"`
+	Disc       string `json:"disc"`
+	Issue      string `json:"issue"`
+	Position   string `json:"position"`
+	Basis      string `json:"basis"`
+	Decider    string `json:"decider"`
+	Override   bool   `json:"override"`
+	Supersedes string `json:"supersedes,omitempty"`
 }
 
 // Discussion is the unit of scope.
@@ -126,4 +132,16 @@ func NewGraph(nodes []Node, links []Link, prefs []Preference, cards []IssueCard)
 func (g *Graph) IsAFNode(nodeID string) bool {
 	n, ok := g.Nodes[nodeID]
 	return ok && (n.Kind == Position || n.Kind == Argument)
+}
+
+// Issues returns the graph's issue ids in canonical (sorted) order.
+func (g *Graph) Issues() []string {
+	var out []string
+	for id, n := range g.Nodes {
+		if n.Kind == Issue {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

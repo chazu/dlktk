@@ -10,9 +10,13 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.3.0 adds globals, errors, the error envelope,
-// per-read output envelopes, and the raise --card flag.
-const Version = "0.3.0"
+// Version of the dlktk contract. 0.7.0 adds the search read. 0.6.0 added the
+// show read, node text in the why envelope, decide suggestions in moves, and
+// the ready/unpopulated agenda sections. 0.5.0 added the check read (decision
+// drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
+// supersede move (bare re-decide rejected, design §16 Q4) and
+// decided.supersedes.
+const Version = "0.7.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -84,7 +88,8 @@ func Current() Schema {
 			{"support", []string{"target", "text"}, "target in {position,argument}", true},
 			{"object", []string{"target", "text"}, "target in {position,argument}", true},
 			{"prefer", []string{"winner", "loser", "--basis label"}, "AF nodes; no preference cycle", true},
-			{"decide", []string{"issue", "position", "[--basis label]"}, "position responds_to issue", true},
+			{"decide", []string{"issue", "position", "[--basis label]"}, "position responds_to issue; issue not already decided (overturning requires supersede)", true},
+			{"supersede", []string{"issue", "position", "--basis label"}, "issue already decided; basis required; new decision links the prior position", true},
 			{"concede", []string{"node"}, "author owns the node", true},
 			{"retract", []string{"node"}, "author owns the node", true},
 		},
@@ -92,10 +97,13 @@ func Current() Schema {
 			{"status", []string{"[issue]"}, "[IssueStatus]", false},
 			{"agenda", nil, "AgendaView", false},
 			{"moves", []string{"issue"}, "MovesView", false},
+			{"show", []string{"node"}, "NodeView", false},
+			{"search", []string{"query", "[--all]"}, "SearchView", false},
 			{"why", []string{"node"}, "WhyView", false},
 			{"explain", []string{"issue"}, "ExplainView", false},
 			{"tree", []string{"[issue]"}, "text", false},
 			{"list", nil, "[Discussion]", false},
+			{"check", []string{"[--all]", "[--strict]"}, "CheckView", false},
 			{"discover", nil, "Schema (this document)", false},
 		},
 		Errors: []ErrCode{
@@ -103,14 +111,18 @@ func Current() Schema {
 			{2, "illegal_move", "ill-formed or illegal move; nothing was written"},
 			{3, "not_found", "a referenced discussion/issue/node id does not exist"},
 			{4, "store_error", "storage or engine failure"},
+			{5, "check_failed", "check found decision drift or invariant violations (warnings too, under --strict)"},
 		},
 		ErrorEnvelope: "{error: kind, detail: string, node?: id}",
 		Envelopes: map[string]string{
-			"IssueStatus": "{issue, issue_text, cardinality, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool}], undecided: [id], stalemate: bool, advice, decided?: {position, basis, decider, override}}",
-			"AgendaView":  "{undecided: [{id, kind, text, label}]}",
+			"IssueStatus": "{issue, issue_text, cardinality, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool}], undecided: [id], stalemate: bool, advice, decided?: {position, basis, decider, override, supersedes?}}",
+			"AgendaView":  "{undecided: [{id, kind, text, label}], ready: [{issue, text, position, position_text}], unpopulated: [{issue, text}]}",
 			"MovesView":   "{issue, moves: [{move, args: [string], effect}]}",
-			"WhyView":     "{node, label, because: [{attacker, attacker_label, reason}], to_flip: [{move, args: [string], effect}]}",
-			"ExplainView": "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override}, decision_is_in: bool}",
+			"WhyView":     "{node, text, label, because: [{attacker, attacker_text, attacker_label, reason}], to_flip: [{move, args: [string], effect}]}",
+			"NodeView":    "{id, kind, text, author?, label?, links: [{rel, dir: in|out, peer, peer_kind, peer_text, peer_label?}], decided?: {position, basis, decider, override, supersedes?}}",
+			"SearchView":  "{query, hits: [{discussion, id, kind, text, label?}]}",
+			"ExplainView": "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override, supersedes?}, decision_is_in: bool}",
+			"CheckView":   "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate, severity: error|warning, discussion, issue?, node?, detail}], ok: bool}",
 			"Discussion":  "{id, title, subject, created_by}",
 		},
 	}
@@ -223,12 +235,13 @@ func CUESchema() string {
 }
 
 #Decision: {
-	disc:     string
-	issue:    string
-	position: string
-	basis:    string
-	decider:  string
-	override: bool
+	disc:        string
+	issue:       string
+	position:    string
+	basis:       string
+	decider:     string
+	override:    bool
+	supersedes?: string // prior decided position, when made via supersede
 }
 
 // relation -> schema binding

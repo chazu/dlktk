@@ -10,18 +10,22 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 
 	"github.com/chazu/dlktk/internal/af"
+	"github.com/chazu/dlktk/internal/check"
 	"github.com/chazu/dlktk/internal/discover"
 	"github.com/chazu/dlktk/internal/fail"
 	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/id"
+	"github.com/chazu/dlktk/internal/mcpserv"
 	"github.com/chazu/dlktk/internal/proto"
 	"github.com/chazu/dlktk/internal/render"
 	"github.com/chazu/dlktk/internal/store"
@@ -67,11 +71,11 @@ func root() *cobra.Command {
 
 	c.AddCommand(
 		cmdNew(), cmdUse(), cmdList(),
-		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(),
+		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(), cmdSupersede(),
 		cmdConcede("concede"), cmdConcede("retract"),
-		cmdStatus(), cmdTree(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
-		cmdReplay(), cmdLog(),
-		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(),
+		cmdStatus(), cmdTree(), cmdShow(), cmdSearch(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
+		cmdReplay(), cmdLog(), cmdCheck(),
+		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(), cmdMCP(),
 	)
 	return c
 }
@@ -171,40 +175,47 @@ func kindOf(label string) ibis.Kind {
 }
 
 // loadFramework resolves disc + as-of, opens the store, and returns the graph,
-// framework, and grounded labels for a read command.
-func loadFramework() (*ibis.Graph, *af.Framework, map[string]af.Label, error) {
+// framework, grounded labels, and in-force decisions for a read command.
+func loadFramework() (*ibis.Graph, *af.Framework, map[string]af.Label, []ibis.Decision, error) {
 	disc, err := resolveDisc()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	w, err := when()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	s, err := openStore()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	defer s.Close()
 	g, err := s.Graph(disc, w)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	fw := af.Build(g)
-	return g, fw, fw.Grounded(), nil
+	decs, err := s.Decisions(disc, w)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	fw, err := af.Build(g)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return g, fw, fw.Grounded(), decs, nil
 }
 
 func cmdAgenda() *cobra.Command {
 	return &cobra.Command{
 		Use:   "agenda",
-		Short: "all UNDEC nodes = the live questions",
+		Short: "the worklist: UNDEC nodes, issues ready to decide, issues with no positions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, _, labels, err := loadFramework()
+			g, _, labels, decs, err := loadFramework()
 			if err != nil {
 				return err
 			}
-			v := render.Agenda(g, labels)
+			v := render.Agenda(g, labels, decs)
 			if wantJSON() {
 				out, _ := render.JSON(v)
 				fmt.Println(out)
@@ -222,14 +233,14 @@ func cmdMoves() *cobra.Command {
 		Short: "legal + useful next moves for an issue",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, fw, labels, err := loadFramework()
+			g, fw, labels, decs, err := loadFramework()
 			if err != nil {
 				return err
 			}
 			if n, ok := g.Nodes[args[0]]; !ok || n.Kind != ibis.Issue {
 				return fail.NotFound(args[0], "issue %q not found", args[0])
 			}
-			v := render.Moves(g, fw, labels, args[0])
+			v := render.Moves(g, fw, labels, args[0], decs)
 			if wantJSON() {
 				out, _ := render.JSON(v)
 				fmt.Println(out)
@@ -241,13 +252,96 @@ func cmdMoves() *cobra.Command {
 	}
 }
 
+func cmdSearch() *cobra.Command {
+	var all bool
+	c := &cobra.Command{
+		Use:   "search <query>",
+		Short: "find nodes whose text matches (check for an existing argument before duplicating it)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			w, err := when()
+			if err != nil {
+				return err
+			}
+			var discs []string
+			if all {
+				ds, err := s.Discussions(w)
+				if err != nil {
+					return err
+				}
+				for _, d := range ds {
+					discs = append(discs, d.ID)
+				}
+				sort.Strings(discs)
+			} else {
+				disc, err := resolveDisc()
+				if err != nil {
+					return err
+				}
+				discs = []string{disc}
+			}
+			v := render.SearchView{Query: args[0]}
+			for _, disc := range discs {
+				g, err := s.Graph(disc, w)
+				if err != nil {
+					return err
+				}
+				var labels map[string]af.Label
+				if fw, err := af.Build(g); err == nil { // unlabellable graphs still searchable
+					labels = fw.Grounded()
+				}
+				v.Hits = append(v.Hits, render.Search(disc, g, labels, args[0])...)
+			}
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.SearchText(v))
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&all, "all", false, "search every discussion in the store (else the current one)")
+	return c
+}
+
+func cmdShow() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <node>",
+		Short: "one node in full: text, author, label, and every incident link",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			g, _, labels, decs, err := loadFramework()
+			if err != nil {
+				return err
+			}
+			if _, ok := g.Nodes[args[0]]; !ok {
+				return fail.NotFound(args[0], "node %q not found", args[0])
+			}
+			v := render.Show(g, labels, args[0], decs)
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.ShowText(v))
+			return nil
+		},
+	}
+}
+
 func cmdWhy() *cobra.Command {
 	return &cobra.Command{
 		Use:   "why <node>",
 		Short: "explain a node's label and how to flip it",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, fw, labels, err := loadFramework()
+			g, fw, labels, _, err := loadFramework()
 			if err != nil {
 				return err
 			}
@@ -297,7 +391,11 @@ func cmdExplain() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			v := render.Explain(g, af.Build(g), args[0], decs)
+			fw, err := af.Build(g)
+			if err != nil {
+				return err
+			}
+			v := render.Explain(g, fw, args[0], decs)
 			if wantJSON() {
 				out, _ := render.JSON(v)
 				fmt.Println(out)
@@ -339,15 +437,22 @@ func cmdReplay() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			lThen := af.Build(gThen).Grounded()
+			fwThen, err := af.Build(gThen)
+			if err != nil {
+				return err
+			}
+			lThen := fwThen.Grounded()
 
 			if diff {
 				gNow, err := s.Graph(disc, store.Now())
 				if err != nil {
 					return err
 				}
-				lNow := af.Build(gNow).Grounded()
-				v := render.Diff(flagAsOf, gThen, gNow, lThen, lNow)
+				fwNow, err := af.Build(gNow)
+				if err != nil {
+					return err
+				}
+				v := render.Diff(flagAsOf, gThen, gNow, lThen, fwNow.Grounded())
 				if wantJSON() {
 					out, _ := render.JSON(v)
 					fmt.Println(out)
@@ -358,7 +463,6 @@ func cmdReplay() *cobra.Command {
 			}
 
 			// No --diff: the grounded labelling as it stood at T.
-			fwThen := af.Build(gThen)
 			decs, err := s.Decisions(disc, store.When{Tx: tx})
 			if err != nil {
 				return err
@@ -383,6 +487,70 @@ func cmdReplay() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&diff, "diff", false, "diff the as-of labelling against now")
+	return c
+}
+
+func cmdCheck() *cobra.Command {
+	var all, strict bool
+	c := &cobra.Command{
+		Use:   "check",
+		Short: "verify standing decisions: drift, stalemates, store invariants (CI-friendly, exit 5 on findings)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			w, err := when()
+			if err != nil {
+				return err
+			}
+			var discs []string
+			if all {
+				ds, err := s.Discussions(w)
+				if err != nil {
+					return err
+				}
+				for _, d := range ds {
+					discs = append(discs, d.ID)
+				}
+			} else {
+				disc, err := resolveDisc()
+				if err != nil {
+					return err
+				}
+				discs = []string{disc}
+			}
+			v, err := check.Run(s, discs, w)
+			if err != nil {
+				return err
+			}
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+			} else {
+				fmt.Print(check.Text(v))
+			}
+			errs, warns := 0, 0
+			for _, f := range v.Findings {
+				if f.Severity == "error" {
+					errs++
+				} else {
+					warns++
+				}
+			}
+			if !v.OK {
+				return fail.New(fail.CodeCheck, "check_failed", "%d error finding(s), %d warning(s)", errs, warns)
+			}
+			if strict && warns > 0 {
+				return fail.New(fail.CodeCheck, "check_failed", "%d warning(s) under --strict", warns)
+			}
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&all, "all", false, "check every discussion in the store (else the current one)")
+	c.Flags().BoolVar(&strict, "strict", false, "fail on warnings (stalemates) too")
 	return c
 }
 
@@ -421,7 +589,8 @@ func cmdLog() *cobra.Command {
 }
 
 func cmdExport() *cobra.Command {
-	return &cobra.Command{
+	var history bool
+	c := &cobra.Command{
 		Use:   "export",
 		Short: "dump the discussion's facts as NDJSON (git-native, re-importable)",
 		Args:  cobra.NoArgs,
@@ -435,7 +604,12 @@ func cmdExport() *cobra.Command {
 				return err
 			}
 			defer s.Close()
-			recs, err := s.Export(disc)
+			var recs []store.ExportRecord
+			if history {
+				recs, err = s.ExportHistory(disc)
+			} else {
+				recs, err = s.Export(disc)
+			}
 			if err != nil {
 				return err
 			}
@@ -448,6 +622,8 @@ func cmdExport() *cobra.Command {
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&history, "history", false, "full tt history: asserts + retract/invalidate events (replayable audit trail)")
+	return c
 }
 
 func cmdImport() *cobra.Command {
@@ -469,22 +645,27 @@ func cmdImport() *cobra.Command {
 
 			sc := bufio.NewScanner(f)
 			sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-			n := 0
+			var recs []store.ExportRecord
+			line := 0
 			for sc.Scan() {
-				line := strings.TrimSpace(sc.Text())
-				if line == "" {
+				line++
+				text := strings.TrimSpace(sc.Text())
+				if text == "" {
 					continue
 				}
 				var rec store.ExportRecord
-				if err := json.Unmarshal([]byte(line), &rec); err != nil {
-					return fail.New(fail.CodeGeneric, "bad_ndjson", "line %d: %v", n+1, err)
+				if err := json.Unmarshal([]byte(text), &rec); err != nil {
+					return fail.New(fail.CodeGeneric, "bad_ndjson", "line %d: %v", line, err)
 				}
-				if err := s.Import(rec); err != nil {
-					return err
-				}
-				n++
+				recs = append(recs, rec)
 			}
 			if err := sc.Err(); err != nil {
+				return err
+			}
+			// Validate the whole batch (shape + invariants) before writing any
+			// of it; import is a write path and must not bypass move legality.
+			n, err := s.ImportAll(recs)
+			if err != nil {
 				return err
 			}
 			if !wantJSON() {
@@ -494,6 +675,22 @@ func cmdImport() *cobra.Command {
 				fmt.Println(out)
 			}
 			return nil
+		},
+	}
+}
+
+func cmdMCP() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp",
+		Short: "serve dlktk over the Model Context Protocol (stdio)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			return mcpserv.Serve(cmd.Context(), s, author(), &mcp.StdioTransport{})
 		},
 	}
 }
@@ -763,6 +960,31 @@ func cmdDecide() *cobra.Command {
 	return c
 }
 
+func cmdSupersede() *cobra.Command {
+	var basis string
+	c := &cobra.Command{
+		Use:   "supersede <issue> <position>",
+		Short: "overturn the standing decision on an issue (basis required)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withMover(func(disc string, m *proto.Mover) error {
+				if err := m.Supersede(disc, args[0], args[1], basis); err != nil {
+					return err
+				}
+				if !wantJSON() {
+					fmt.Printf("superseded: %s -> %s\n", args[0], args[1])
+				} else {
+					out, _ := render.JSON(map[string]string{"issue": args[0], "position": args[1]})
+					fmt.Println(out)
+				}
+				return nil
+			})
+		},
+	}
+	c.Flags().StringVar(&basis, "basis", "", "why the prior decision is overturned (required)")
+	return c
+}
+
 func cmdConcede(name string) *cobra.Command {
 	return &cobra.Command{
 		Use:   name + " <node>",
@@ -811,7 +1033,10 @@ func cmdStatus() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fw := af.Build(g)
+			fw, err := af.Build(g)
+			if err != nil {
+				return err
+			}
 			labels := fw.Grounded()
 
 			issues, err := targetIssues(g, args)
@@ -881,7 +1106,9 @@ func cmdTree() *cobra.Command {
 			var fw *af.Framework
 			var labels map[string]af.Label
 			if opts.Labels {
-				fw = af.Build(g)
+				if fw, err = af.Build(g); err != nil {
+					return err
+				}
 				labels = fw.Grounded()
 			}
 			fmt.Print(render.Tree(g, issue, opts, fw, labels, decs))
@@ -935,11 +1162,5 @@ func targetIssues(g *ibis.Graph, args []string) ([]string, error) {
 		}
 		return []string{args[0]}, nil
 	}
-	var issues []string
-	for id, n := range g.Nodes {
-		if n.Kind == ibis.Issue {
-			issues = append(issues, id)
-		}
-	}
-	return issues, nil
+	return g.Issues(), nil
 }

@@ -4,6 +4,8 @@
 package proto
 
 import (
+	"fmt"
+
 	"github.com/chazu/dlktk/internal/af"
 	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/id"
@@ -114,7 +116,10 @@ func (m *Mover) Prefer(disc, winner, loser, basis string) (string, error) {
 }
 
 // Decide closes an issue by accepting a position. The override flag is set when
-// the accepted position is not IN under the current grounded labelling.
+// the accepted position is not IN under the current grounded labelling. A bare
+// re-decide on an already-decided issue is rejected: overturning a standing
+// decision must go through Supersede so the reversal carries a recorded basis
+// (design §16 Q4).
 func (m *Mover) Decide(disc, issue, position, basis string) error {
 	g, err := m.s.Graph(disc, store.Now())
 	if err != nil {
@@ -123,17 +128,78 @@ func (m *Mover) Decide(disc, issue, position, basis string) error {
 	if err := g.CanDecide(issue, position); err != nil {
 		return err
 	}
-	labels := af.Build(g).Grounded()
-	override := labels[position] != af.IN
-	// Supersede any standing decision on this issue (close its vt interval),
-	// then record the new one. Policy: auto-supersede (design §16.7).
+	if prior, err := m.standingDecision(disc, issue); err != nil {
+		return err
+	} else if prior != nil {
+		return &ibis.IllegalMove{
+			Node: issue,
+			Detail: fmt.Sprintf("issue %s is already decided (-> %s); use `supersede %s <position> --basis <label>` to overturn it",
+				issue, prior.Position, issue),
+		}
+	}
+	fw, err := af.Build(g)
+	if err != nil {
+		return err
+	}
+	labels := fw.Grounded()
+	return m.s.AddDecision(ibis.Decision{
+		Disc: disc, Issue: issue, Position: position, Basis: basis,
+		Decider: m.author, Override: labels[position] != af.IN,
+	})
+}
+
+// Supersede overturns the standing decision on an issue with a new one. The
+// basis is mandatory — the whole point of the move is forcing the reasoning for
+// the reversal to be captured — and the new decision links the position it
+// supersedes (design §16 Q4).
+func (m *Mover) Supersede(disc, issue, position, basis string) error {
+	if basis == "" {
+		return &ibis.IllegalMove{Node: issue,
+			Detail: "supersede requires --basis: record why the prior decision is overturned"}
+	}
+	g, err := m.s.Graph(disc, store.Now())
+	if err != nil {
+		return err
+	}
+	if err := g.CanDecide(issue, position); err != nil {
+		return err
+	}
+	prior, err := m.standingDecision(disc, issue)
+	if err != nil {
+		return err
+	}
+	if prior == nil {
+		return &ibis.IllegalMove{Node: issue,
+			Detail: fmt.Sprintf("issue %s has no standing decision to supersede; use decide", issue)}
+	}
+	fw, err := af.Build(g)
+	if err != nil {
+		return err
+	}
+	labels := fw.Grounded()
+	// Close the prior decision's vt interval, then record the new one.
 	if err := m.s.SupersedeDecision(disc, issue); err != nil {
 		return err
 	}
 	return m.s.AddDecision(ibis.Decision{
 		Disc: disc, Issue: issue, Position: position, Basis: basis,
-		Decider: m.author, Override: override,
+		Decider: m.author, Override: labels[position] != af.IN,
+		Supersedes: prior.Position,
 	})
+}
+
+// standingDecision returns the in-force decision on an issue, or nil.
+func (m *Mover) standingDecision(disc, issue string) (*ibis.Decision, error) {
+	decs, err := m.s.Decisions(disc, store.Now())
+	if err != nil {
+		return nil, err
+	}
+	for i := range decs {
+		if decs[i].Issue == issue {
+			return &decs[i], nil
+		}
+	}
+	return nil, nil
 }
 
 // Concede withdraws one of the author's own nodes (alias: retract).

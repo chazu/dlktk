@@ -10,6 +10,8 @@ import (
 
 	"github.com/chazu/pudl/pkg/factstore"
 
+	"github.com/chazu/dlktk/internal/af"
+	"github.com/chazu/dlktk/internal/fail"
 	"github.com/chazu/dlktk/internal/ibis"
 )
 
@@ -32,7 +34,7 @@ type Store struct {
 func Open(dir string) (*Store, error) {
 	fs, err := factstore.Open(dir)
 	if err != nil {
-		return nil, fmt.Errorf("open pudl store: %w", err)
+		return nil, fail.Store("open pudl store: %v", err)
 	}
 	return &Store{fs: fs}, nil
 }
@@ -44,11 +46,11 @@ func (s *Store) Close() error { return s.fs.Close() }
 func (s *Store) add(relation string, payload any, source string) error {
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal %s args: %w", relation, err)
+		return fail.Store("marshal %s args: %v", relation, err)
 	}
 	_, err = s.fs.AddFact(factstore.Fact{Relation: relation, Args: string(b), Source: source})
 	if err != nil {
-		return fmt.Errorf("add %s fact: %w", relation, err)
+		return fail.Store("add %s fact: %v", relation, err)
 	}
 	return nil
 }
@@ -69,13 +71,13 @@ func Now() When { return When{} }
 func scan[T any](s *Store, relation string, w When) ([]T, error) {
 	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relation, TxAt: w.Tx, ValidAt: w.Valid})
 	if err != nil {
-		return nil, fmt.Errorf("query %s: %w", relation, err)
+		return nil, fail.Store("query %s: %v", relation, err)
 	}
 	out := make([]T, 0, len(facts))
 	for _, f := range facts {
 		var v T
 		if err := json.Unmarshal([]byte(f.Args), &v); err != nil {
-			return nil, fmt.Errorf("unmarshal %s fact %s: %w", relation, f.ID, err)
+			return nil, fail.Store("unmarshal %s fact %s: %v", relation, f.ID, err)
 		}
 		out = append(out, v)
 	}
@@ -158,7 +160,7 @@ func (s *Store) Graph(disc string, w When) (*ibis.Graph, error) {
 func (s *Store) SupersedeDecision(disc, issue string) error {
 	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relDecision})
 	if err != nil {
-		return fmt.Errorf("query decisions: %w", err)
+		return fail.Store("query decisions: %v", err)
 	}
 	for _, f := range facts {
 		var d ibis.Decision
@@ -167,7 +169,7 @@ func (s *Store) SupersedeDecision(disc, issue string) error {
 		}
 		if d.Disc == disc && d.Issue == issue {
 			if err := s.fs.InvalidateFact(f.ID); err != nil {
-				return fmt.Errorf("invalidate prior decision on %s: %w", issue, err)
+				return fail.Store("invalidate prior decision on %s: %v", issue, err)
 			}
 		}
 	}
@@ -180,7 +182,7 @@ func (s *Store) SupersedeDecision(disc, issue string) error {
 func (s *Store) RetractNode(nid string) error {
 	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relNode})
 	if err != nil {
-		return fmt.Errorf("query nodes: %w", err)
+		return fail.Store("query nodes: %v", err)
 	}
 	var target string
 	matches := 0
@@ -195,25 +197,30 @@ func (s *Store) RetractNode(nid string) error {
 		}
 	}
 	if matches == 0 {
-		return fmt.Errorf("node %s not found", nid)
+		return fail.NotFound(nid, "node %s not found", nid)
 	}
 	if matches > 1 {
-		return fmt.Errorf("node %s is current in %d facts (store invariant violated)", nid, matches)
+		return fail.Store("node %s is current in %d facts (store invariant violated)", nid, matches)
 	}
 	if err := s.fs.RetractFact(target); err != nil {
-		return fmt.Errorf("retract node %s: %w", nid, err)
+		return fail.Store("retract node %s: %v", nid, err)
 	}
 	return nil
 }
 
-// ExportRecord is one fact in the git-native NDJSON move log. ValidStart and
-// Source are preserved so re-import recomputes the same content-addressed id
-// (making import idempotent).
+// ExportRecord is one record in the git-native NDJSON move log. An assert
+// record (Event == "") carries a fact; ValidStart and Source are preserved so
+// re-import recomputes the same content-addressed id (making import
+// idempotent). A history export additionally interleaves event records
+// (Event == retract|invalidate) that close a previously asserted fact,
+// referenced by its content-addressed id.
 type ExportRecord struct {
 	Relation   string          `json:"relation"`
-	Args       json.RawMessage `json:"args"`
+	Args       json.RawMessage `json:"args,omitempty"`
 	Source     string          `json:"source,omitempty"`
 	ValidStart int64           `json:"valid_start,omitempty"`
+	Event      string          `json:"event,omitempty"` // "" (assert) | "retract" | "invalidate"
+	Ref        string          `json:"ref,omitempty"`   // content-addressed fact id the event applies to
 }
 
 // Export gathers the current (live) dlktk/* facts for a discussion as an
@@ -225,7 +232,7 @@ func (s *Store) Export(disc string) ([]ExportRecord, error) {
 	emit := func(rel string, keep func(map[string]any) bool) error {
 		facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: rel})
 		if err != nil {
-			return fmt.Errorf("export %s: %w", rel, err)
+			return fail.Store("export %s: %v", rel, err)
 		}
 		for _, f := range facts {
 			var m map[string]any
@@ -275,11 +282,140 @@ func (s *Store) Export(disc string) ([]ExportRecord, error) {
 	return recs, nil
 }
 
+// Event kinds in a history export.
+const (
+	EventRetract    = "retract"
+	EventInvalidate = "invalidate"
+)
+
+// ExportHistory gathers a discussion's full transaction-time history as an
+// ordered, replayable event stream: every fact ever asserted (including
+// later-retracted ones) followed, at its place in time, by the retract /
+// invalidate events that closed it. Importing the stream into a fresh store
+// reproduces both the current state and the audit trail. Event *order* is
+// preserved exactly; pudl stamps transaction times at import, so original
+// wall-clock tt is not reproduced (its API takes no explicit tx time).
+func (s *Store) ExportHistory(disc string) ([]ExportRecord, error) {
+	type histRec struct {
+		rec  ExportRecord
+		at   int64
+		rank int // assert < invalidate < retract at equal times
+		tie  string
+	}
+	var all []histRec
+	issueIDs := map[string]bool{}
+
+	collect := func(rel string, keep func(map[string]any) bool) error {
+		facts, err := s.fs.FactHistory(rel)
+		if err != nil {
+			return fail.Store("history export %s: %v", rel, err)
+		}
+		for _, f := range facts {
+			var m map[string]any
+			if err := json.Unmarshal([]byte(f.Args), &m); err != nil {
+				continue
+			}
+			if !keep(m) {
+				continue
+			}
+			if rel == relNode {
+				if k, _ := m["kind"].(string); k == string(ibis.Issue) {
+					if id, _ := m["id"].(string); id != "" {
+						issueIDs[id] = true
+					}
+				}
+			}
+			all = append(all, histRec{
+				rec: ExportRecord{Relation: rel, Args: json.RawMessage(f.Args), Source: f.Source, ValidStart: f.ValidStart},
+				at:  f.TxStart, rank: 0, tie: f.ID,
+			})
+			if f.ValidEnd != nil {
+				all = append(all, histRec{
+					rec: ExportRecord{Relation: rel, Event: EventInvalidate, Ref: f.ID},
+					at:  *f.ValidEnd, rank: 1, tie: f.ID,
+				})
+			}
+			if f.TxEnd != nil {
+				all = append(all, histRec{
+					rec: ExportRecord{Relation: rel, Event: EventRetract, Ref: f.ID},
+					at:  *f.TxEnd, rank: 2, tie: f.ID,
+				})
+			}
+		}
+		return nil
+	}
+
+	discIs := func(m map[string]any) bool { d, _ := m["disc"].(string); return d == disc }
+	if err := collect(relDiscussion, func(m map[string]any) bool { id, _ := m["id"].(string); return id == disc }); err != nil {
+		return nil, err
+	}
+	if err := collect(relNode, discIs); err != nil { // populates issueIDs
+		return nil, err
+	}
+	for _, rel := range []string{relLink, relPreference, relDecision} {
+		if err := collect(rel, discIs); err != nil {
+			return nil, err
+		}
+	}
+	if err := collect(relIssueCard, func(m map[string]any) bool { i, _ := m["issue"].(string); return issueIDs[i] }); err != nil {
+		return nil, err
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		a, b := all[i], all[j]
+		if a.at != b.at {
+			return a.at < b.at
+		}
+		if a.rank != b.rank {
+			return a.rank < b.rank
+		}
+		return a.tie < b.tie
+	})
+	recs := make([]ExportRecord, len(all))
+	for i, h := range all {
+		recs[i] = h.rec
+	}
+	return recs, nil
+}
+
+// applyEvent replays one retract/invalidate event. Already-applied events are
+// skipped, so re-importing a history stream converges.
+func (s *Store) applyEvent(rec ExportRecord) error {
+	facts, err := s.fs.FactHistory(rec.Relation)
+	if err != nil {
+		return fail.Store("replay %s: %v", rec.Event, err)
+	}
+	for _, f := range facts {
+		if f.ID != rec.Ref {
+			continue
+		}
+		switch rec.Event {
+		case EventRetract:
+			if f.TxEnd != nil {
+				return nil // already retracted
+			}
+			if err := s.fs.RetractFact(f.ID); err != nil {
+				return fail.Store("replay retract %s: %v", f.ID, err)
+			}
+		case EventInvalidate:
+			if f.ValidEnd != nil {
+				return nil // already invalidated
+			}
+			if err := s.fs.InvalidateFact(f.ID); err != nil {
+				return fail.Store("replay invalidate %s: %v", f.ID, err)
+			}
+		}
+		return nil
+	}
+	return &ibis.IllegalMove{Detail: fmt.Sprintf(
+		"history event %s references unknown %s fact %s (stream not self-contained)", rec.Event, rec.Relation, rec.Ref)}
+}
+
 // Import re-asserts one exported fact. Idempotent: pudl content-addresses by
 // (relation, canonical args, valid_start, source), so re-importing dedups.
 func (s *Store) Import(rec ExportRecord) error {
 	if !strings.HasPrefix(rec.Relation, "dlktk/") {
-		return fmt.Errorf("refusing to import non-dlktk relation %q", rec.Relation)
+		return &ibis.IllegalMove{Detail: fmt.Sprintf("refusing to import non-dlktk relation %q", rec.Relation)}
 	}
 	_, err := s.fs.AddFact(factstore.Fact{
 		Relation:   rec.Relation,
@@ -288,7 +424,149 @@ func (s *Store) Import(rec ExportRecord) error {
 		ValidStart: rec.ValidStart,
 	})
 	if err != nil {
-		return fmt.Errorf("import %s: %w", rec.Relation, err)
+		return fail.Store("import %s: %v", rec.Relation, err)
+	}
+	return nil
+}
+
+// ImportAll validates a batch of exported facts and then writes them. Import is
+// a first-class write path (the NDJSON log can be the system of record, design
+// §12), so it must not bypass the invariants the move layer enforces: every
+// record must be a known dlktk relation with well-formed args, and the batch's
+// preferences — combined with what the store already holds — must stay acyclic
+// (a cycle would collapse the closure to all-prefer-all, §16 Q2). Validation
+// errors are IllegalMove (exit 2) and nothing is written.
+func (s *Store) ImportAll(recs []ExportRecord) (int, error) {
+	prefsByDisc := map[string][]ibis.Preference{}
+	for i, rec := range recs {
+		if err := validateRecord(rec, i+1, prefsByDisc); err != nil {
+			return 0, err
+		}
+	}
+	for disc, incoming := range prefsByDisc {
+		existing, err := s.Preferences(disc, Now())
+		if err != nil {
+			return 0, err
+		}
+		if node, cyclic := af.PreferenceCycle(append(existing, incoming...)); cyclic {
+			return 0, &ibis.IllegalMove{Node: node, Detail: fmt.Sprintf(
+				"import would create a preference cycle through %s in discussion %s; nothing imported", node, disc)}
+		}
+	}
+	for _, rec := range recs {
+		if rec.Event != "" {
+			if err := s.applyEvent(rec); err != nil {
+				return 0, err
+			}
+			continue
+		}
+		if err := s.Import(rec); err != nil {
+			return 0, err
+		}
+	}
+	return len(recs), nil
+}
+
+// validateRecord checks one record's relation and args shape, collecting
+// preferences for the batch-level acyclicity check.
+func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Preference) error {
+	bad := func(format string, a ...any) error {
+		return &ibis.IllegalMove{Detail: fmt.Sprintf("import record %d: ", line) + fmt.Sprintf(format, a...)}
+	}
+	parse := func(v any) error {
+		if err := json.Unmarshal(rec.Args, v); err != nil {
+			return bad("malformed %s args: %v", rec.Relation, err)
+		}
+		return nil
+	}
+	require := func(field, val string) error {
+		if val == "" {
+			return bad("%s args missing %q", rec.Relation, field)
+		}
+		return nil
+	}
+
+	if rec.Event != "" {
+		if rec.Event != EventRetract && rec.Event != EventInvalidate {
+			return bad("event %q invalid (retract or invalidate)", rec.Event)
+		}
+		if rec.Ref == "" {
+			return bad("%s event missing ref", rec.Event)
+		}
+		if !knownRelation(rec.Relation) {
+			return bad("unknown relation %q", rec.Relation)
+		}
+		return nil
+	}
+
+	switch rec.Relation {
+	case relDiscussion:
+		var v ibis.Discussion
+		if err := parse(&v); err != nil {
+			return err
+		}
+		return require("id", v.ID)
+	case relNode:
+		var v ibis.Node
+		if err := parse(&v); err != nil {
+			return err
+		}
+		if v.Kind != ibis.Issue && v.Kind != ibis.Position && v.Kind != ibis.Argument {
+			return bad("node kind %q invalid", v.Kind)
+		}
+		return firstErr(require("id", v.ID), require("disc", v.Disc))
+	case relLink:
+		var v ibis.Link
+		if err := parse(&v); err != nil {
+			return err
+		}
+		if v.Rel != ibis.RespondsTo && v.Rel != ibis.Supports && v.Rel != ibis.ObjectsTo {
+			return bad("link rel %q invalid", v.Rel)
+		}
+		return firstErr(require("id", v.ID), require("disc", v.Disc), require("src", v.Src), require("dst", v.Dst))
+	case relIssueCard:
+		var v ibis.IssueCard
+		if err := parse(&v); err != nil {
+			return err
+		}
+		if v.Cardinality != ibis.SelectOne && v.Cardinality != ibis.Open {
+			return bad("cardinality %q invalid", v.Cardinality)
+		}
+		return require("issue", v.Issue)
+	case relPreference:
+		var v ibis.Preference
+		if err := parse(&v); err != nil {
+			return err
+		}
+		if err := firstErr(require("disc", v.Disc), require("winner", v.Winner), require("loser", v.Loser)); err != nil {
+			return err
+		}
+		prefsByDisc[v.Disc] = append(prefsByDisc[v.Disc], v)
+		return nil
+	case relDecision:
+		var v ibis.Decision
+		if err := parse(&v); err != nil {
+			return err
+		}
+		return firstErr(require("disc", v.Disc), require("issue", v.Issue), require("position", v.Position))
+	default:
+		return bad("unknown relation %q", rec.Relation)
+	}
+}
+
+func knownRelation(rel string) bool {
+	switch rel {
+	case relDiscussion, relNode, relLink, relIssueCard, relPreference, relDecision:
+		return true
+	}
+	return false
+}
+
+func firstErr(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -312,7 +590,7 @@ func (s *Store) History(disc, nodeID string) ([]HistoryEntry, error) {
 	for _, rel := range []string{relNode, relLink, relPreference, relDecision} {
 		facts, err := s.fs.FactHistory(rel)
 		if err != nil {
-			return nil, fmt.Errorf("history %s: %w", rel, err)
+			return nil, fail.Store("history %s: %v", rel, err)
 		}
 		for _, f := range facts {
 			var m map[string]any

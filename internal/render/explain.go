@@ -19,9 +19,12 @@ type MoveSuggestion struct {
 	Effect string   `json:"effect"`
 }
 
-// Because explains one contributor to a node's label.
+// Because explains one contributor to a node's label. AttackerText carries the
+// attacker's claim so an agent can read what it is rebutting without a second
+// round-trip.
 type Because struct {
 	Attacker      string `json:"attacker"`
+	AttackerText  string `json:"attacker_text"`
 	AttackerLabel string `json:"attacker_label"`
 	Reason        string `json:"reason"`
 }
@@ -29,6 +32,7 @@ type Because struct {
 // WhyView is the explanation envelope for one node (design §8.3).
 type WhyView struct {
 	Node    string           `json:"node"`
+	Text    string           `json:"text"`
 	Label   string           `json:"label"`
 	Because []Because        `json:"because"`
 	ToFlip  []MoveSuggestion `json:"to_flip"`
@@ -48,17 +52,32 @@ type NodeRef struct {
 	Label string `json:"label"`
 }
 
-// AgendaView lists the genuinely-contested (UNDEC) AF nodes — the live agenda.
+// IssueRef points at an issue needing attention, optionally with the position
+// that resolves it.
+type IssueRef struct {
+	Issue        string `json:"issue"`
+	Text         string `json:"text"`
+	Position     string `json:"position,omitempty"`
+	PositionText string `json:"position_text,omitempty"`
+}
+
+// AgendaView is the worklist that drives a discussion to closure: contested
+// (UNDEC) nodes that need argument or preference, issues whose labelling has
+// settled on a unique justified position and only await a decide, and issues
+// with no positions at all.
 type AgendaView struct {
-	Undecided []NodeRef `json:"undecided"`
+	Undecided   []NodeRef  `json:"undecided"`
+	Ready       []IssueRef `json:"ready"`
+	Unpopulated []IssueRef `json:"unpopulated"`
 }
 
 // Why builds the explanation for a node.
 func Why(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, node string) WhyView {
-	v := WhyView{Node: node, Label: string(labels[node])}
+	v := WhyView{Node: node, Text: g.Nodes[node].Text, Label: string(labels[node])}
 	for _, b := range attackersOf(fw, node) {
 		v.Because = append(v.Because, Because{
 			Attacker:      b,
+			AttackerText:  g.Nodes[b].Text,
 			AttackerLabel: string(labels[b]),
 			Reason:        attackReason(g, fw, b, node),
 		})
@@ -67,10 +86,17 @@ func Why(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, node strin
 	return v
 }
 
-// Moves enumerates legal, useful next moves for an issue: propose, plus the
+// Moves enumerates legal, useful next moves for an issue: decide when the
+// labelling has settled (so the loop has a terminal move), propose, plus the
 // flip suggestions for each of its positions.
-func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue string) MovesView {
+func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue string, decs []ibis.Decision) MovesView {
 	mv := MovesView{Issue: issue}
+	if pos, ok := readyToDecide(g, labels, issue, decs); ok {
+		mv.Moves = append(mv.Moves, MoveSuggestion{
+			Move: "decide", Args: []string{issue, pos},
+			Effect: fmt.Sprintf("close the issue: %s is the unique justified position", pos),
+		})
+	}
 	mv.Moves = append(mv.Moves, MoveSuggestion{
 		Move: "propose", Args: []string{issue}, Effect: "add another candidate position",
 	})
@@ -80,8 +106,9 @@ func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue st
 	return mv
 }
 
-// Agenda returns all UNDEC AF nodes, sorted by id.
-func Agenda(g *ibis.Graph, labels map[string]af.Label) AgendaView {
+// Agenda returns the discussion's worklist: UNDEC nodes (sorted by id), issues
+// ready to decide, and issues with no positions yet.
+func Agenda(g *ibis.Graph, labels map[string]af.Label, decs []ibis.Decision) AgendaView {
 	var v AgendaView
 	ids := make([]string, 0, len(labels))
 	for id := range labels {
@@ -95,7 +122,50 @@ func Agenda(g *ibis.Graph, labels map[string]af.Label) AgendaView {
 		n := g.Nodes[id]
 		v.Undecided = append(v.Undecided, NodeRef{ID: id, Kind: string(n.Kind), Text: n.Text, Label: "UNDEC"})
 	}
+
+	var issues []string
+	for id, n := range g.Nodes {
+		if n.Kind == ibis.Issue {
+			issues = append(issues, id)
+		}
+	}
+	sort.Strings(issues)
+	for _, issue := range issues {
+		if len(positionsFor(g, issue)) == 0 {
+			v.Unpopulated = append(v.Unpopulated, IssueRef{Issue: issue, Text: g.Nodes[issue].Text})
+			continue
+		}
+		if pos, ok := readyToDecide(g, labels, issue, decs); ok {
+			v.Ready = append(v.Ready, IssueRef{
+				Issue: issue, Text: g.Nodes[issue].Text,
+				Position: pos, PositionText: g.Nodes[pos].Text,
+			})
+		}
+	}
 	return v
+}
+
+// readyToDecide reports the position an undecided issue is ready to close on:
+// no position is contested and exactly one is justified.
+func readyToDecide(g *ibis.Graph, labels map[string]af.Label, issue string, decs []ibis.Decision) (string, bool) {
+	for _, d := range decs {
+		if d.Issue == issue {
+			return "", false
+		}
+	}
+	var in []string
+	for _, p := range positionsFor(g, issue) {
+		switch labels[p] {
+		case af.IN:
+			in = append(in, p)
+		case af.UNDEC:
+			return "", false
+		}
+	}
+	if len(in) == 1 {
+		return in[0], true
+	}
+	return "", false
 }
 
 // toFlip generates the moves that would change a node's label (design §4.3).
@@ -143,9 +213,9 @@ func toFlip(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, node st
 // WhyText renders a WhyView as human text.
 func WhyText(v WhyView) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s is %s\n", v.Node, v.Label)
+	fmt.Fprintf(&b, "%s  %q  is %s\n", v.Node, v.Text, v.Label)
 	for _, r := range v.Because {
-		fmt.Fprintf(&b, "  ← %s [%s]  %s\n", r.Attacker, r.AttackerLabel, r.Reason)
+		fmt.Fprintf(&b, "  ← %s [%s]  %q  (%s)\n", r.Attacker, r.AttackerLabel, r.AttackerText, r.Reason)
 	}
 	if len(v.ToFlip) > 0 {
 		fmt.Fprintln(&b, "  to flip:")
@@ -168,13 +238,29 @@ func MovesText(v MovesView) string {
 
 // AgendaText renders an AgendaView.
 func AgendaText(v AgendaView) string {
-	if len(v.Undecided) == 0 {
-		return "agenda empty — nothing contested\n"
+	if len(v.Undecided) == 0 && len(v.Ready) == 0 && len(v.Unpopulated) == 0 {
+		return "agenda empty — nothing contested, nothing awaiting a decision\n"
 	}
 	var b strings.Builder
-	fmt.Fprintln(&b, "live agenda (UNDEC):")
-	for _, n := range v.Undecided {
-		fmt.Fprintf(&b, "  %s%s  %q\n", ibis.PrefixFor(ibis.Kind(n.Kind)), n.ID, n.Text)
+	if len(v.Undecided) > 0 {
+		fmt.Fprintln(&b, "live agenda (UNDEC):")
+		for _, n := range v.Undecided {
+			fmt.Fprintf(&b, "  %s%s  %q\n", ibis.PrefixFor(ibis.Kind(n.Kind)), n.ID, n.Text)
+		}
+	}
+	if len(v.Ready) > 0 {
+		fmt.Fprintln(&b, "ready to decide:")
+		for _, r := range v.Ready {
+			fmt.Fprintf(&b, "  %s%s  %q  → %s%s  %q\n",
+				ibis.PrefixFor(ibis.Issue), r.Issue, r.Text,
+				ibis.PrefixFor(ibis.Position), r.Position, r.PositionText)
+		}
+	}
+	if len(v.Unpopulated) > 0 {
+		fmt.Fprintln(&b, "no positions yet (propose one):")
+		for _, r := range v.Unpopulated {
+			fmt.Fprintf(&b, "  %s%s  %q\n", ibis.PrefixFor(ibis.Issue), r.Issue, r.Text)
+		}
 	}
 	return b.String()
 }
@@ -388,7 +474,7 @@ func Explain(g *ibis.Graph, fw *af.Framework, issue string, decs []ibis.Decision
 	}
 	for _, d := range decs {
 		if d.Issue == issue {
-			v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override}
+			v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes}
 			v.DecisionIsIN = labels[d.Position] == af.IN
 		}
 	}
