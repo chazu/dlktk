@@ -71,7 +71,7 @@ func root() *cobra.Command {
 		cmdNew(), cmdUse(), cmdList(),
 		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(), cmdSupersede(),
 		cmdConcede("concede"), cmdConcede("retract"),
-		cmdStatus(), cmdTree(), cmdShow(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
+		cmdStatus(), cmdTree(), cmdShow(), cmdSearch(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
 		cmdReplay(), cmdLog(), cmdCheck(),
 		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(),
 	)
@@ -248,6 +248,64 @@ func cmdMoves() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func cmdSearch() *cobra.Command {
+	var all bool
+	c := &cobra.Command{
+		Use:   "search <query>",
+		Short: "find nodes whose text matches (check for an existing argument before duplicating it)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			w, err := when()
+			if err != nil {
+				return err
+			}
+			var discs []string
+			if all {
+				ds, err := s.Discussions(w)
+				if err != nil {
+					return err
+				}
+				for _, d := range ds {
+					discs = append(discs, d.ID)
+				}
+				sort.Strings(discs)
+			} else {
+				disc, err := resolveDisc()
+				if err != nil {
+					return err
+				}
+				discs = []string{disc}
+			}
+			v := render.SearchView{Query: args[0]}
+			for _, disc := range discs {
+				g, err := s.Graph(disc, w)
+				if err != nil {
+					return err
+				}
+				var labels map[string]af.Label
+				if fw, err := af.Build(g); err == nil { // unlabellable graphs still searchable
+					labels = fw.Grounded()
+				}
+				v.Hits = append(v.Hits, render.Search(disc, g, labels, args[0])...)
+			}
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.SearchText(v))
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&all, "all", false, "search every discussion in the store (else the current one)")
+	return c
 }
 
 func cmdShow() *cobra.Command {

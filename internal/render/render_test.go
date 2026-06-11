@@ -99,6 +99,22 @@ func TestWhyIncludesText(t *testing.T) {
 	}
 }
 
+func TestSearchMatchesCaseInsensitive(t *testing.T) {
+	g, _, labels := settledGraph()
+	hits := Search("d", g, labels, "WRITER")
+	if len(hits) != 1 || hits[0].ID != "C" || hits[0].Label != "IN" {
+		t.Fatalf("search hits wrong: %+v", hits)
+	}
+	if hits := Search("d", g, labels, "lock"); len(hits) != 2 { // rwlock + "which lock?"
+		t.Fatalf("want 2 hits for 'lock', got %+v", hits)
+	}
+	// Issues match but carry no AF label; nil labels (unlabellable graph) is fine.
+	hits = Search("d", g, nil, "which lock")
+	if len(hits) != 1 || hits[0].Kind != "issue" || hits[0].Label != "" {
+		t.Fatalf("issue hit wrong: %+v", hits)
+	}
+}
+
 func TestShowLinksBothDirections(t *testing.T) {
 	g, _, labels := settledGraph()
 	v := Show(g, labels, "B", nil)
