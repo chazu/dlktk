@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -941,5 +942,8 @@ func targetIssues(g *ibis.Graph, args []string) ([]string, error) {
 			issues = append(issues, id)
 		}
 	}
+	// Canonical (proquint) order: same inputs must give byte-identical output
+	// (design §8.1); map iteration order must never leak into the envelope.
+	sort.Strings(issues)
 	return issues, nil
 }
