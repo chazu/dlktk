@@ -71,7 +71,7 @@ func root() *cobra.Command {
 		cmdNew(), cmdUse(), cmdList(),
 		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(), cmdSupersede(),
 		cmdConcede("concede"), cmdConcede("retract"),
-		cmdStatus(), cmdTree(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
+		cmdStatus(), cmdTree(), cmdShow(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
 		cmdReplay(), cmdLog(), cmdCheck(),
 		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(),
 	)
@@ -173,43 +173,47 @@ func kindOf(label string) ibis.Kind {
 }
 
 // loadFramework resolves disc + as-of, opens the store, and returns the graph,
-// framework, and grounded labels for a read command.
-func loadFramework() (*ibis.Graph, *af.Framework, map[string]af.Label, error) {
+// framework, grounded labels, and in-force decisions for a read command.
+func loadFramework() (*ibis.Graph, *af.Framework, map[string]af.Label, []ibis.Decision, error) {
 	disc, err := resolveDisc()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	w, err := when()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	s, err := openStore()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	defer s.Close()
 	g, err := s.Graph(disc, w)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
+	}
+	decs, err := s.Decisions(disc, w)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 	fw, err := af.Build(g)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	return g, fw, fw.Grounded(), nil
+	return g, fw, fw.Grounded(), decs, nil
 }
 
 func cmdAgenda() *cobra.Command {
 	return &cobra.Command{
 		Use:   "agenda",
-		Short: "all UNDEC nodes = the live questions",
+		Short: "the worklist: UNDEC nodes, issues ready to decide, issues with no positions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, _, labels, err := loadFramework()
+			g, _, labels, decs, err := loadFramework()
 			if err != nil {
 				return err
 			}
-			v := render.Agenda(g, labels)
+			v := render.Agenda(g, labels, decs)
 			if wantJSON() {
 				out, _ := render.JSON(v)
 				fmt.Println(out)
@@ -227,14 +231,14 @@ func cmdMoves() *cobra.Command {
 		Short: "legal + useful next moves for an issue",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, fw, labels, err := loadFramework()
+			g, fw, labels, decs, err := loadFramework()
 			if err != nil {
 				return err
 			}
 			if n, ok := g.Nodes[args[0]]; !ok || n.Kind != ibis.Issue {
 				return fail.NotFound(args[0], "issue %q not found", args[0])
 			}
-			v := render.Moves(g, fw, labels, args[0])
+			v := render.Moves(g, fw, labels, args[0], decs)
 			if wantJSON() {
 				out, _ := render.JSON(v)
 				fmt.Println(out)
@@ -246,13 +250,38 @@ func cmdMoves() *cobra.Command {
 	}
 }
 
+func cmdShow() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <node>",
+		Short: "one node in full: text, author, label, and every incident link",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			g, _, labels, decs, err := loadFramework()
+			if err != nil {
+				return err
+			}
+			if _, ok := g.Nodes[args[0]]; !ok {
+				return fail.NotFound(args[0], "node %q not found", args[0])
+			}
+			v := render.Show(g, labels, args[0], decs)
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.ShowText(v))
+			return nil
+		},
+	}
+}
+
 func cmdWhy() *cobra.Command {
 	return &cobra.Command{
 		Use:   "why <node>",
 		Short: "explain a node's label and how to flip it",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, fw, labels, err := loadFramework()
+			g, fw, labels, _, err := loadFramework()
 			if err != nil {
 				return err
 			}

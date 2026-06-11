@@ -10,11 +10,12 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.5.0 adds the check read (decision drift /
-// stalemate / store-invariant verification, exit 5) on top of 0.4.0's
-// supersede move (bare re-decide rejected, design §16 Q4) and
-// decided.supersedes envelope field.
-const Version = "0.5.0"
+// Version of the dlktk contract. 0.6.0 adds the show read, node text in the
+// why envelope, decide suggestions in moves, and the ready/unpopulated agenda
+// sections. 0.5.0 added the check read (decision drift / stalemate /
+// store-invariant verification, exit 5); 0.4.0 the supersede move (bare
+// re-decide rejected, design §16 Q4) and decided.supersedes.
+const Version = "0.6.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -95,6 +96,7 @@ func Current() Schema {
 			{"status", []string{"[issue]"}, "[IssueStatus]", false},
 			{"agenda", nil, "AgendaView", false},
 			{"moves", []string{"issue"}, "MovesView", false},
+			{"show", []string{"node"}, "NodeView", false},
 			{"why", []string{"node"}, "WhyView", false},
 			{"explain", []string{"issue"}, "ExplainView", false},
 			{"tree", []string{"[issue]"}, "text", false},
@@ -112,9 +114,10 @@ func Current() Schema {
 		ErrorEnvelope: "{error: kind, detail: string, node?: id}",
 		Envelopes: map[string]string{
 			"IssueStatus": "{issue, issue_text, cardinality, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool}], undecided: [id], stalemate: bool, advice, decided?: {position, basis, decider, override, supersedes?}}",
-			"AgendaView":  "{undecided: [{id, kind, text, label}]}",
+			"AgendaView":  "{undecided: [{id, kind, text, label}], ready: [{issue, text, position, position_text}], unpopulated: [{issue, text}]}",
 			"MovesView":   "{issue, moves: [{move, args: [string], effect}]}",
-			"WhyView":     "{node, label, because: [{attacker, attacker_label, reason}], to_flip: [{move, args: [string], effect}]}",
+			"WhyView":     "{node, text, label, because: [{attacker, attacker_text, attacker_label, reason}], to_flip: [{move, args: [string], effect}]}",
+			"NodeView":    "{id, kind, text, author?, label?, links: [{rel, dir: in|out, peer, peer_kind, peer_text, peer_label?}], decided?: {position, basis, decider, override, supersedes?}}",
 			"ExplainView": "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override, supersedes?}, decision_is_in: bool}",
 			"CheckView":   "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate, severity: error|warning, discussion, issue?, node?, detail}], ok: bool}",
 			"Discussion":  "{id, title, subject, created_by}",

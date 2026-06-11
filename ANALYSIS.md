@@ -111,19 +111,15 @@ In rough order of impact:
    is empty or a budget runs out would make the agentic half demonstrated rather than
    theoretical. Pair with a ready-made `AGENTS.md`/`CLAUDE.md` snippet documenting the
    loop (`discover` → `agenda` → `moves` → act → re-read).
-4. **Close the read-surface gaps.** `show <node>` is in the design (§6.2) but not
-   implemented, and `why`'s `because[]` carries attacker *ids* without their text, so an
-   agent must issue extra calls to read what it is rebutting. Add `show`, embed node
-   text in `why`/`moves` envelopes, and add `search <text>` so an agent rejoining a
-   discussion can check whether an argument already exists — duplicate-argument piling
-   is *the* predictable multi-agent failure mode.
-5. **Richer `moves`/`agenda`.** `moves` suggests only `propose` plus label-flips; it
-   never suggests `decide` when an issue has a unique undisputed IN position, never
-   suggests rebutting an OUT argument's defeater, never suggests `support`. `agenda`
-   lists only UNDEC nodes — a closure-driving loop equally needs "issues with no
-   positions" and "issues ready to decide". As implemented, an agent following the
-   tool's own advice can never reach the terminal state (deciding), because no surface
-   proposes it.
+4. **Close the read-surface gaps.** **[mostly implemented on this branch]** `show
+   <node>` (design §6.2) now exists, and `why` embeds the node's and each attacker's
+   text. Still open: `search <text>` so an agent rejoining a discussion can check
+   whether an argument already exists — duplicate-argument piling is *the* predictable
+   multi-agent failure mode.
+5. **Richer `moves`/`agenda`.** **[implemented on this branch]** `moves` now suggests
+   `decide` when an issue's labelling has settled on a unique justified position (the
+   loop's terminal move), and `agenda` reports ready-to-decide and position-less issues
+   alongside the UNDEC set. Still open: `support` suggestions.
 6. **Batch moves.** `dlktk apply -` consuming NDJSON *moves* (not raw facts) from
    stdin: one process, one transaction, atomic legality — cheaper for harnesses and a
    natural fix-point for §1.4.

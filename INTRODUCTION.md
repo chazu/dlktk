@@ -233,8 +233,9 @@ This is the whole derivation in three parts: how the attack graph was built (and
 Other lenses on the same computation:
 
 - **`tree`** — the argument as an indented outline, with the standing decision marked (`★`) and a legend. Add `--labels` to overlay IN/OUT/UNDEC.
-- **`why <node>`** — a *local* explanation: a single node's attackers, their labels, and the moves that would flip it.
-- **`agenda`** — every UNDEC node across the discussion: the live, genuinely-open questions.
+- **`show <node>`** — one node in full: its text, author, label, and every incident link with the peers' text inlined.
+- **`why <node>`** — a *local* explanation: a single node's attackers (with their text), their labels, and the moves that would flip it.
+- **`agenda`** — the worklist: every UNDEC node, plus issues whose labelling has settled and only await a `decide`, plus issues with no positions yet.
 - **`moves <issue>`** — legal *and useful* next moves with their effects, so you (or an agent) never have to guess what to do next.
 
 ---
