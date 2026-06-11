@@ -86,10 +86,12 @@ to 4; covered by tests.
   is unimplemented. Minimum: separate `--author` from `--role`, record both, implement
   roster. Signing (Q6) can stay deferred, but identity should be explicit rather than
   accidental.
-- `export`/`import` round-trip only **current** facts: retractions, superseded
-  decisions, and the tt audit trail are lost in the git-native log — the headline
-  "reviewable provenance in PRs" feature drops the provenance. Full-history export is
-  deferred in §15; it should be promoted to the top of the queue.
+- ~~`export`/`import` round-trip only **current** facts~~ **[implemented on this
+  branch]** `export --history` emits the full tt history as an ordered event stream
+  (asserts + retract/invalidate events keyed by content-addressed fact ids); `import`
+  replays it idempotently, so retractions and superseded decisions survive the
+  git-native round-trip. Caveat: pudl stamps tx times at import, so event *order* is
+  exact but original wall-clock tt is not reproduced (would need a pudl API addition).
 
 ## 3. Highest-leverage additions for agentic/human exploration
 

@@ -589,7 +589,8 @@ func cmdLog() *cobra.Command {
 }
 
 func cmdExport() *cobra.Command {
-	return &cobra.Command{
+	var history bool
+	c := &cobra.Command{
 		Use:   "export",
 		Short: "dump the discussion's facts as NDJSON (git-native, re-importable)",
 		Args:  cobra.NoArgs,
@@ -603,7 +604,12 @@ func cmdExport() *cobra.Command {
 				return err
 			}
 			defer s.Close()
-			recs, err := s.Export(disc)
+			var recs []store.ExportRecord
+			if history {
+				recs, err = s.ExportHistory(disc)
+			} else {
+				recs, err = s.Export(disc)
+			}
 			if err != nil {
 				return err
 			}
@@ -616,6 +622,8 @@ func cmdExport() *cobra.Command {
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&history, "history", false, "full tt history: asserts + retract/invalidate events (replayable audit trail)")
+	return c
 }
 
 func cmdImport() *cobra.Command {
