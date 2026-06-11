@@ -53,5 +53,7 @@ say "agenda is ready -> decide, then verify nothing drifted"
 "$DLKTK" check -d "$DISC" --store "$STORE"
 
 say "the git-native record (commit this)"
-"$DLKTK" export -d "$DISC" --store "$STORE" | head -3
-echo "..."
+RECORD="$STORE/dialectic.ndjson"
+"$DLKTK" export -d "$DISC" --store "$STORE" > "$RECORD"
+head -3 "$RECORD"
+echo "... ($(wc -l < "$RECORD") facts total, written to $RECORD)"
