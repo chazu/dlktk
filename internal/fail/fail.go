@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/chazu/dlktk/internal/af"
 	"github.com/chazu/dlktk/internal/ibis"
 )
 
@@ -61,6 +62,10 @@ func Classify(err error) *Error {
 	var im *ibis.IllegalMove
 	if errors.As(err, &im) {
 		return &Error{ErrKind: "illegal_move", Detail: im.Detail, Node: im.Node, code: CodeIllegal}
+	}
+	var cyc *af.PreferenceCycleError
+	if errors.As(err, &cyc) {
+		return &Error{ErrKind: "store_error", Detail: cyc.Error(), Node: cyc.Node, code: CodeStore}
 	}
 	return &Error{ErrKind: "error", Detail: err.Error(), code: CodeGeneric}
 }

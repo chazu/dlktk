@@ -10,6 +10,7 @@ import (
 
 	"github.com/chazu/pudl/pkg/factstore"
 
+	"github.com/chazu/dlktk/internal/af"
 	"github.com/chazu/dlktk/internal/ibis"
 )
 
@@ -289,6 +290,121 @@ func (s *Store) Import(rec ExportRecord) error {
 	})
 	if err != nil {
 		return fmt.Errorf("import %s: %w", rec.Relation, err)
+	}
+	return nil
+}
+
+// ImportAll validates a batch of exported facts and then writes them. Import is
+// a first-class write path (the NDJSON log can be the system of record, design
+// §12), so it must not bypass the invariants the move layer enforces: every
+// record must be a known dlktk relation with well-formed args, and the batch's
+// preferences — combined with what the store already holds — must stay acyclic
+// (a cycle would collapse the closure to all-prefer-all, §16 Q2). Validation
+// errors are IllegalMove (exit 2) and nothing is written.
+func (s *Store) ImportAll(recs []ExportRecord) (int, error) {
+	prefsByDisc := map[string][]ibis.Preference{}
+	for i, rec := range recs {
+		if err := validateRecord(rec, i+1, prefsByDisc); err != nil {
+			return 0, err
+		}
+	}
+	for disc, incoming := range prefsByDisc {
+		existing, err := s.Preferences(disc, Now())
+		if err != nil {
+			return 0, err
+		}
+		if node, cyclic := af.PreferenceCycle(append(existing, incoming...)); cyclic {
+			return 0, &ibis.IllegalMove{Node: node, Detail: fmt.Sprintf(
+				"import would create a preference cycle through %s in discussion %s; nothing imported", node, disc)}
+		}
+	}
+	for _, rec := range recs {
+		if err := s.Import(rec); err != nil {
+			return 0, err
+		}
+	}
+	return len(recs), nil
+}
+
+// validateRecord checks one record's relation and args shape, collecting
+// preferences for the batch-level acyclicity check.
+func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Preference) error {
+	bad := func(format string, a ...any) error {
+		return &ibis.IllegalMove{Detail: fmt.Sprintf("import record %d: ", line) + fmt.Sprintf(format, a...)}
+	}
+	parse := func(v any) error {
+		if err := json.Unmarshal(rec.Args, v); err != nil {
+			return bad("malformed %s args: %v", rec.Relation, err)
+		}
+		return nil
+	}
+	require := func(field, val string) error {
+		if val == "" {
+			return bad("%s args missing %q", rec.Relation, field)
+		}
+		return nil
+	}
+
+	switch rec.Relation {
+	case relDiscussion:
+		var v ibis.Discussion
+		if err := parse(&v); err != nil {
+			return err
+		}
+		return require("id", v.ID)
+	case relNode:
+		var v ibis.Node
+		if err := parse(&v); err != nil {
+			return err
+		}
+		if v.Kind != ibis.Issue && v.Kind != ibis.Position && v.Kind != ibis.Argument {
+			return bad("node kind %q invalid", v.Kind)
+		}
+		return firstErr(require("id", v.ID), require("disc", v.Disc))
+	case relLink:
+		var v ibis.Link
+		if err := parse(&v); err != nil {
+			return err
+		}
+		if v.Rel != ibis.RespondsTo && v.Rel != ibis.Supports && v.Rel != ibis.ObjectsTo {
+			return bad("link rel %q invalid", v.Rel)
+		}
+		return firstErr(require("id", v.ID), require("disc", v.Disc), require("src", v.Src), require("dst", v.Dst))
+	case relIssueCard:
+		var v ibis.IssueCard
+		if err := parse(&v); err != nil {
+			return err
+		}
+		if v.Cardinality != ibis.SelectOne && v.Cardinality != ibis.Open {
+			return bad("cardinality %q invalid", v.Cardinality)
+		}
+		return require("issue", v.Issue)
+	case relPreference:
+		var v ibis.Preference
+		if err := parse(&v); err != nil {
+			return err
+		}
+		if err := firstErr(require("disc", v.Disc), require("winner", v.Winner), require("loser", v.Loser)); err != nil {
+			return err
+		}
+		prefsByDisc[v.Disc] = append(prefsByDisc[v.Disc], v)
+		return nil
+	case relDecision:
+		var v ibis.Decision
+		if err := parse(&v); err != nil {
+			return err
+		}
+		return firstErr(require("disc", v.Disc), require("issue", v.Issue), require("position", v.Position))
+	default:
+		return bad("unknown relation %q", rec.Relation)
+	}
+}
+
+func firstErr(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

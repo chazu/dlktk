@@ -137,7 +137,11 @@ func (m *Mover) Decide(disc, issue, position, basis string) error {
 				issue, prior.Position, issue),
 		}
 	}
-	labels := af.Build(g).Grounded()
+	fw, err := af.Build(g)
+	if err != nil {
+		return err
+	}
+	labels := fw.Grounded()
 	return m.s.AddDecision(ibis.Decision{
 		Disc: disc, Issue: issue, Position: position, Basis: basis,
 		Decider: m.author, Override: labels[position] != af.IN,
@@ -168,7 +172,11 @@ func (m *Mover) Supersede(disc, issue, position, basis string) error {
 		return &ibis.IllegalMove{Node: issue,
 			Detail: fmt.Sprintf("issue %s has no standing decision to supersede; use decide", issue)}
 	}
-	labels := af.Build(g).Grounded()
+	fw, err := af.Build(g)
+	if err != nil {
+		return err
+	}
+	labels := fw.Grounded()
 	// Close the prior decision's vt interval, then record the new one.
 	if err := m.s.SupersedeDecision(disc, issue); err != nil {
 		return err

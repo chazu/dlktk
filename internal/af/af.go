@@ -4,10 +4,22 @@
 package af
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/chazu/dlktk/internal/ibis"
 )
+
+// PreferenceCycleError reports a cyclic preference relation in stored data.
+// CanPrefer rejects cycles at assert time and import validates batches, so a
+// cycle reaching evaluation is a store-invariant violation: naive closure over
+// it would collapse to all-prefer-all and label mutually exclusive positions
+// simultaneously IN. Fail loud rather than compute nonsense (design §3.1 ethos).
+type PreferenceCycleError struct{ Node string }
+
+func (e *PreferenceCycleError) Error() string {
+	return fmt.Sprintf("preference cycle through %s: stored preferences must be acyclic (store invariant violated)", e.Node)
+}
 
 // Label is the three-valued grounded label.
 type Label string
@@ -30,8 +42,9 @@ type Framework struct {
 	Preferred map[[2]string]bool // [winner,loser] -> true (transitive)
 }
 
-// Build derives the AF from an IBIS graph.
-func Build(g *ibis.Graph) *Framework {
+// Build derives the AF from an IBIS graph. It fails with PreferenceCycleError
+// if the stored preference relation is cyclic.
+func Build(g *ibis.Graph) (*Framework, error) {
 	f := &Framework{Preferred: map[[2]string]bool{}}
 
 	// Arg set: positions and arguments.
@@ -71,8 +84,11 @@ func Build(g *ibis.Graph) *Framework {
 		}
 	}
 
-	// Preference, transitively closed.
+	// Preference, transitively closed; a cycle voids the closure's meaning.
 	f.Preferred = closure(g.Preferences)
+	if n, cyclic := cycleNode(f.Preferred); cyclic {
+		return nil, &PreferenceCycleError{Node: n}
+	}
 
 	// Defeat = attack surviving preference: attack(a,b) unless preferred(b,a).
 	for _, e := range f.Attack {
@@ -81,7 +97,29 @@ func Build(g *ibis.Graph) *Framework {
 		}
 	}
 
-	return f
+	return f, nil
+}
+
+// PreferenceCycle reports a node sitting on a preference cycle, if any. Used by
+// import validation to reject batches that would corrupt the store.
+func PreferenceCycle(prefs []ibis.Preference) (string, bool) {
+	return cycleNode(closure(prefs))
+}
+
+// cycleNode finds the smallest node that the transitive closure makes preferred
+// over itself (smallest for deterministic reporting).
+func cycleNode(closed map[[2]string]bool) (string, bool) {
+	var hits []string
+	for pair, ok := range closed {
+		if ok && pair[0] == pair[1] {
+			hits = append(hits, pair[0])
+		}
+	}
+	if len(hits) == 0 {
+		return "", false
+	}
+	sort.Strings(hits)
+	return hits[0], true
 }
 
 // Grounded computes the grounded labelling over the defeat relation. The

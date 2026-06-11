@@ -191,7 +191,10 @@ func loadFramework() (*ibis.Graph, *af.Framework, map[string]af.Label, error) {
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	fw := af.Build(g)
+	fw, err := af.Build(g)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	return g, fw, fw.Grounded(), nil
 }
 
@@ -298,7 +301,11 @@ func cmdExplain() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			v := render.Explain(g, af.Build(g), args[0], decs)
+			fw, err := af.Build(g)
+			if err != nil {
+				return err
+			}
+			v := render.Explain(g, fw, args[0], decs)
 			if wantJSON() {
 				out, _ := render.JSON(v)
 				fmt.Println(out)
@@ -340,15 +347,22 @@ func cmdReplay() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			lThen := af.Build(gThen).Grounded()
+			fwThen, err := af.Build(gThen)
+			if err != nil {
+				return err
+			}
+			lThen := fwThen.Grounded()
 
 			if diff {
 				gNow, err := s.Graph(disc, store.Now())
 				if err != nil {
 					return err
 				}
-				lNow := af.Build(gNow).Grounded()
-				v := render.Diff(flagAsOf, gThen, gNow, lThen, lNow)
+				fwNow, err := af.Build(gNow)
+				if err != nil {
+					return err
+				}
+				v := render.Diff(flagAsOf, gThen, gNow, lThen, fwNow.Grounded())
 				if wantJSON() {
 					out, _ := render.JSON(v)
 					fmt.Println(out)
@@ -359,7 +373,6 @@ func cmdReplay() *cobra.Command {
 			}
 
 			// No --diff: the grounded labelling as it stood at T.
-			fwThen := af.Build(gThen)
 			decs, err := s.Decisions(disc, store.When{Tx: tx})
 			if err != nil {
 				return err
@@ -470,22 +483,27 @@ func cmdImport() *cobra.Command {
 
 			sc := bufio.NewScanner(f)
 			sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-			n := 0
+			var recs []store.ExportRecord
+			line := 0
 			for sc.Scan() {
-				line := strings.TrimSpace(sc.Text())
-				if line == "" {
+				line++
+				text := strings.TrimSpace(sc.Text())
+				if text == "" {
 					continue
 				}
 				var rec store.ExportRecord
-				if err := json.Unmarshal([]byte(line), &rec); err != nil {
-					return fail.New(fail.CodeGeneric, "bad_ndjson", "line %d: %v", n+1, err)
+				if err := json.Unmarshal([]byte(text), &rec); err != nil {
+					return fail.New(fail.CodeGeneric, "bad_ndjson", "line %d: %v", line, err)
 				}
-				if err := s.Import(rec); err != nil {
-					return err
-				}
-				n++
+				recs = append(recs, rec)
 			}
 			if err := sc.Err(); err != nil {
+				return err
+			}
+			// Validate the whole batch (shape + invariants) before writing any
+			// of it; import is a write path and must not bypass move legality.
+			n, err := s.ImportAll(recs)
+			if err != nil {
 				return err
 			}
 			if !wantJSON() {
@@ -837,7 +855,10 @@ func cmdStatus() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fw := af.Build(g)
+			fw, err := af.Build(g)
+			if err != nil {
+				return err
+			}
 			labels := fw.Grounded()
 
 			issues, err := targetIssues(g, args)
@@ -907,7 +928,9 @@ func cmdTree() *cobra.Command {
 			var fw *af.Framework
 			var labels map[string]af.Label
 			if opts.Labels {
-				fw = af.Build(g)
+				if fw, err = af.Build(g); err != nil {
+					return err
+				}
 				labels = fw.Grounded()
 			}
 			fmt.Print(render.Tree(g, issue, opts, fw, labels, decs))
