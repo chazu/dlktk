@@ -33,3 +33,5 @@ jobs:
             ./dlktk import "$f" --store /tmp/dialectics
           done
           ./dlktk check --all --strict --store /tmp/dialectics
+      # The reference deliberation harness must run end to end (AGENTS.md).
+      - run: DLKTK=$PWD/dlktk ./examples/deliberate.sh

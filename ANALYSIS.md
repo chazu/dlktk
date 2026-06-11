@@ -106,12 +106,11 @@ In rough order of impact:
    CLI; errors surface as the structured error envelope with `isError`. Moves are
    serialized under one in-process mutex, closing the §1.4 TOCTOU race for MCP-driven
    sessions (the multi-process CLI race remains open).
-3. **A reference deliberation harness.** The design correctly scopes out
-   who-speaks-when, but viability requires *someone* to ship it. Even an `examples/`
-   script that spawns the §11 personas as subagents and alternates moves until `agenda`
-   is empty or a budget runs out would make the agentic half demonstrated rather than
-   theoretical. Pair with a ready-made `AGENTS.md`/`CLAUDE.md` snippet documenting the
-   loop (`discover` → `agenda` → `moves` → act → re-read).
+3. **A reference deliberation harness.** **[implemented on this branch]** `AGENTS.md`
+   is the drop-in playbook (the loop, move discipline, personas, stopping conditions,
+   exit codes), and `examples/deliberate.sh` demonstrates the multi-persona mechanics
+   end to end with scripted personas — swap the scripted moves for LLM calls and the
+   shape is the harness. CI runs it on every PR. Still open: a live-LLM example.
 4. **Close the read-surface gaps.** **[mostly implemented on this branch]** `show
    <node>` (design §6.2) now exists, and `why` embeds the node's and each attacker's
    text. Still open: `search <text>` so an agent rejoining a discussion can check
