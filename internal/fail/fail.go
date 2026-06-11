@@ -63,6 +63,10 @@ func Classify(err error) *Error {
 	if errors.As(err, &im) {
 		return &Error{ErrKind: "illegal_move", Detail: im.Detail, Node: im.Node, code: CodeIllegal}
 	}
+	var nf *ibis.NotFound
+	if errors.As(err, &nf) {
+		return &Error{ErrKind: "not_found", Detail: nf.Detail, Node: nf.Node, code: CodeNotFound}
+	}
 	var cyc *af.PreferenceCycleError
 	if errors.As(err, &cyc) {
 		return &Error{ErrKind: "store_error", Detail: cyc.Error(), Node: cyc.Node, code: CodeStore}

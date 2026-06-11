@@ -15,6 +15,21 @@ func illegal(node, format string, a ...any) error {
 	return &IllegalMove{Detail: fmt.Sprintf(format, a...), Node: node}
 }
 
+// NotFound is returned when a move references a node id that does not exist.
+// fail maps it to exit code 3 (the discover contract reserves 3 for "a
+// referenced discussion/issue/node id does not exist"; 2 is for moves that are
+// ill-formed against nodes that do exist).
+type NotFound struct {
+	Detail string
+	Node   string
+}
+
+func (e *NotFound) Error() string { return e.Detail }
+
+func notFound(node, format string, a ...any) error {
+	return &NotFound{Detail: fmt.Sprintf(format, a...), Node: node}
+}
+
 // CanRaise validates a raise: an optional parent must be an existing issue.
 func (g *Graph) CanRaise(parent string) error {
 	if parent == "" {
@@ -22,7 +37,7 @@ func (g *Graph) CanRaise(parent string) error {
 	}
 	n, ok := g.Nodes[parent]
 	if !ok {
-		return illegal(parent, "raise parent %q not found", parent)
+		return notFound(parent, "raise parent %q not found", parent)
 	}
 	if n.Kind != Issue {
 		return illegal(parent, "raise parent must be an issue, got %s", n.Kind)
@@ -34,7 +49,7 @@ func (g *Graph) CanRaise(parent string) error {
 func (g *Graph) CanPropose(issue string) error {
 	n, ok := g.Nodes[issue]
 	if !ok {
-		return illegal(issue, "propose target %q not found", issue)
+		return notFound(issue, "propose target %q not found", issue)
 	}
 	if n.Kind != Issue {
 		return illegal(issue, "propose target must be an issue, got %s", n.Kind)
@@ -46,7 +61,7 @@ func (g *Graph) CanPropose(issue string) error {
 func (g *Graph) CanAttach(target string, rel Rel) error {
 	n, ok := g.Nodes[target]
 	if !ok {
-		return illegal(target, "%s target %q not found", rel, target)
+		return notFound(target, "%s target %q not found", rel, target)
 	}
 	if n.Kind != Position && n.Kind != Argument {
 		return illegal(target, "%s target must be a position or argument, got %s", rel, n.Kind)
@@ -60,11 +75,13 @@ func (g *Graph) CanPrefer(winner, loser string) error {
 	if winner == loser {
 		return illegal(winner, "cannot prefer a node over itself")
 	}
-	if !g.IsAFNode(winner) {
-		return illegal(winner, "prefer winner must be a position or argument")
-	}
-	if !g.IsAFNode(loser) {
-		return illegal(loser, "prefer loser must be a position or argument")
+	for _, id := range []string{winner, loser} {
+		if _, ok := g.Nodes[id]; !ok {
+			return notFound(id, "prefer endpoint %q not found", id)
+		}
+		if !g.IsAFNode(id) {
+			return illegal(id, "prefer endpoints must be positions or arguments, got %s", g.Nodes[id].Kind)
+		}
 	}
 	// Reject if loser already (transitively) preferred over winner — that would
 	// close a cycle.
@@ -78,14 +95,14 @@ func (g *Graph) CanPrefer(winner, loser string) error {
 func (g *Graph) CanDecide(issue, position string) error {
 	n, ok := g.Nodes[issue]
 	if !ok {
-		return illegal(issue, "decide issue %q not found", issue)
+		return notFound(issue, "decide issue %q not found", issue)
 	}
 	if n.Kind != Issue {
 		return illegal(issue, "decide issue must be an issue, got %s", n.Kind)
 	}
 	p, ok := g.Nodes[position]
 	if !ok {
-		return illegal(position, "decide position %q not found", position)
+		return notFound(position, "decide position %q not found", position)
 	}
 	if p.Kind != Position {
 		return illegal(position, "decide position must be a position, got %s", p.Kind)
@@ -103,7 +120,7 @@ func (g *Graph) CanDecide(issue, position string) error {
 func (g *Graph) CanConcede(node, author string) error {
 	n, ok := g.Nodes[node]
 	if !ok {
-		return illegal(node, "concede target %q not found", node)
+		return notFound(node, "concede target %q not found", node)
 	}
 	if n.Author != author {
 		return illegal(node, "cannot concede %s: owned by %s, not %s", node, n.Author, author)

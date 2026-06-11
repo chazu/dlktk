@@ -11,6 +11,7 @@ import (
 	"github.com/chazu/pudl/pkg/factstore"
 
 	"github.com/chazu/dlktk/internal/af"
+	"github.com/chazu/dlktk/internal/fail"
 	"github.com/chazu/dlktk/internal/ibis"
 )
 
@@ -33,7 +34,7 @@ type Store struct {
 func Open(dir string) (*Store, error) {
 	fs, err := factstore.Open(dir)
 	if err != nil {
-		return nil, fmt.Errorf("open pudl store: %w", err)
+		return nil, fail.Store("open pudl store: %v", err)
 	}
 	return &Store{fs: fs}, nil
 }
@@ -45,11 +46,11 @@ func (s *Store) Close() error { return s.fs.Close() }
 func (s *Store) add(relation string, payload any, source string) error {
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal %s args: %w", relation, err)
+		return fail.Store("marshal %s args: %v", relation, err)
 	}
 	_, err = s.fs.AddFact(factstore.Fact{Relation: relation, Args: string(b), Source: source})
 	if err != nil {
-		return fmt.Errorf("add %s fact: %w", relation, err)
+		return fail.Store("add %s fact: %v", relation, err)
 	}
 	return nil
 }
@@ -70,13 +71,13 @@ func Now() When { return When{} }
 func scan[T any](s *Store, relation string, w When) ([]T, error) {
 	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relation, TxAt: w.Tx, ValidAt: w.Valid})
 	if err != nil {
-		return nil, fmt.Errorf("query %s: %w", relation, err)
+		return nil, fail.Store("query %s: %v", relation, err)
 	}
 	out := make([]T, 0, len(facts))
 	for _, f := range facts {
 		var v T
 		if err := json.Unmarshal([]byte(f.Args), &v); err != nil {
-			return nil, fmt.Errorf("unmarshal %s fact %s: %w", relation, f.ID, err)
+			return nil, fail.Store("unmarshal %s fact %s: %v", relation, f.ID, err)
 		}
 		out = append(out, v)
 	}
@@ -159,7 +160,7 @@ func (s *Store) Graph(disc string, w When) (*ibis.Graph, error) {
 func (s *Store) SupersedeDecision(disc, issue string) error {
 	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relDecision})
 	if err != nil {
-		return fmt.Errorf("query decisions: %w", err)
+		return fail.Store("query decisions: %v", err)
 	}
 	for _, f := range facts {
 		var d ibis.Decision
@@ -168,7 +169,7 @@ func (s *Store) SupersedeDecision(disc, issue string) error {
 		}
 		if d.Disc == disc && d.Issue == issue {
 			if err := s.fs.InvalidateFact(f.ID); err != nil {
-				return fmt.Errorf("invalidate prior decision on %s: %w", issue, err)
+				return fail.Store("invalidate prior decision on %s: %v", issue, err)
 			}
 		}
 	}
@@ -181,7 +182,7 @@ func (s *Store) SupersedeDecision(disc, issue string) error {
 func (s *Store) RetractNode(nid string) error {
 	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relNode})
 	if err != nil {
-		return fmt.Errorf("query nodes: %w", err)
+		return fail.Store("query nodes: %v", err)
 	}
 	var target string
 	matches := 0
@@ -196,13 +197,13 @@ func (s *Store) RetractNode(nid string) error {
 		}
 	}
 	if matches == 0 {
-		return fmt.Errorf("node %s not found", nid)
+		return fail.NotFound(nid, "node %s not found", nid)
 	}
 	if matches > 1 {
-		return fmt.Errorf("node %s is current in %d facts (store invariant violated)", nid, matches)
+		return fail.Store("node %s is current in %d facts (store invariant violated)", nid, matches)
 	}
 	if err := s.fs.RetractFact(target); err != nil {
-		return fmt.Errorf("retract node %s: %w", nid, err)
+		return fail.Store("retract node %s: %v", nid, err)
 	}
 	return nil
 }
@@ -226,7 +227,7 @@ func (s *Store) Export(disc string) ([]ExportRecord, error) {
 	emit := func(rel string, keep func(map[string]any) bool) error {
 		facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: rel})
 		if err != nil {
-			return fmt.Errorf("export %s: %w", rel, err)
+			return fail.Store("export %s: %v", rel, err)
 		}
 		for _, f := range facts {
 			var m map[string]any
@@ -280,7 +281,7 @@ func (s *Store) Export(disc string) ([]ExportRecord, error) {
 // (relation, canonical args, valid_start, source), so re-importing dedups.
 func (s *Store) Import(rec ExportRecord) error {
 	if !strings.HasPrefix(rec.Relation, "dlktk/") {
-		return fmt.Errorf("refusing to import non-dlktk relation %q", rec.Relation)
+		return &ibis.IllegalMove{Detail: fmt.Sprintf("refusing to import non-dlktk relation %q", rec.Relation)}
 	}
 	_, err := s.fs.AddFact(factstore.Fact{
 		Relation:   rec.Relation,
@@ -289,7 +290,7 @@ func (s *Store) Import(rec ExportRecord) error {
 		ValidStart: rec.ValidStart,
 	})
 	if err != nil {
-		return fmt.Errorf("import %s: %w", rec.Relation, err)
+		return fail.Store("import %s: %v", rec.Relation, err)
 	}
 	return nil
 }
@@ -428,7 +429,7 @@ func (s *Store) History(disc, nodeID string) ([]HistoryEntry, error) {
 	for _, rel := range []string{relNode, relLink, relPreference, relDecision} {
 		facts, err := s.fs.FactHistory(rel)
 		if err != nil {
-			return nil, fmt.Errorf("history %s: %w", rel, err)
+			return nil, fail.Store("history %s: %v", rel, err)
 		}
 		for _, f := range facts {
 			var m map[string]any

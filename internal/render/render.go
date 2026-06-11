@@ -174,10 +174,10 @@ func JSON(v any) (string, error) {
 
 // TreeOpts controls how Tree renders the IBIS graph.
 type TreeOpts struct {
-	Labels  bool // annotate positions/arguments with grounded label + decided/reinstated markers
-	Authors bool // append the node author
-	ASCII   bool // use ASCII connectors/glyphs instead of Unicode (dumb terminals)
-	NoWrap  bool // one line per node, truncated to width (dense overview) instead of wrapping full text
+	Labels   bool // annotate positions/arguments with grounded label + decided/reinstated markers
+	Authors  bool // append the node author
+	ASCII    bool // use ASCII connectors/glyphs instead of Unicode (dumb terminals)
+	NoWrap   bool // one line per node, truncated to width (dense overview) instead of wrapping full text
 	NoIDs    bool // omit the node id suffix
 	NoLegend bool // suppress the glyph legend header
 	Width    int  // max line width for wrapping/truncation; 0 falls back to 100
