@@ -68,7 +68,7 @@ func root() *cobra.Command {
 
 	c.AddCommand(
 		cmdNew(), cmdUse(), cmdList(),
-		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(),
+		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(), cmdSupersede(),
 		cmdConcede("concede"), cmdConcede("retract"),
 		cmdStatus(), cmdTree(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
 		cmdReplay(), cmdLog(),
@@ -761,6 +761,31 @@ func cmdDecide() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&basis, "basis", "", "basis label")
+	return c
+}
+
+func cmdSupersede() *cobra.Command {
+	var basis string
+	c := &cobra.Command{
+		Use:   "supersede <issue> <position>",
+		Short: "overturn the standing decision on an issue (basis required)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withMover(func(disc string, m *proto.Mover) error {
+				if err := m.Supersede(disc, args[0], args[1], basis); err != nil {
+					return err
+				}
+				if !wantJSON() {
+					fmt.Printf("superseded: %s -> %s\n", args[0], args[1])
+				} else {
+					out, _ := render.JSON(map[string]string{"issue": args[0], "position": args[1]})
+					fmt.Println(out)
+				}
+				return nil
+			})
+		},
+	}
+	c.Flags().StringVar(&basis, "basis", "", "why the prior decision is overturned (required)")
 	return c
 }
 

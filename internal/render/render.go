@@ -24,10 +24,11 @@ type PositionView struct {
 
 // DecidedView is the standing decision on an issue, if any.
 type DecidedView struct {
-	Position string `json:"position"`
-	Basis    string `json:"basis,omitempty"`
-	Decider  string `json:"decider"`
-	Override bool   `json:"override"`
+	Position   string `json:"position"`
+	Basis      string `json:"basis,omitempty"`
+	Decider    string `json:"decider"`
+	Override   bool   `json:"override"`
+	Supersedes string `json:"supersedes,omitempty"`
 }
 
 // IssueStatus is the status envelope for one issue (design §8.3).
@@ -87,7 +88,7 @@ func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue s
 	st.Advice = advise(st)
 	for _, d := range decs {
 		if d.Issue == issue {
-			st.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override}
+			st.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes}
 		}
 	}
 	return st
@@ -152,6 +153,9 @@ func StatusText(st IssueStatus) string {
 		flag := ""
 		if st.Decided.Override {
 			flag = " (OVERRIDE — was not IN at decision time)"
+		}
+		if st.Decided.Supersedes != "" {
+			flag += fmt.Sprintf(" (supersedes %s)", st.Decided.Supersedes)
 		}
 		fmt.Fprintf(&b, "  ✓ decided: %s by %s%s\n", st.Decided.Position, st.Decided.Decider, flag)
 	}

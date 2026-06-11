@@ -10,9 +10,9 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.3.0 adds globals, errors, the error envelope,
-// per-read output envelopes, and the raise --card flag.
-const Version = "0.3.0"
+// Version of the dlktk contract. 0.4.0 adds the supersede move (bare re-decide
+// is now rejected, design §16 Q4) and the decided.supersedes envelope field.
+const Version = "0.4.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -84,7 +84,8 @@ func Current() Schema {
 			{"support", []string{"target", "text"}, "target in {position,argument}", true},
 			{"object", []string{"target", "text"}, "target in {position,argument}", true},
 			{"prefer", []string{"winner", "loser", "--basis label"}, "AF nodes; no preference cycle", true},
-			{"decide", []string{"issue", "position", "[--basis label]"}, "position responds_to issue", true},
+			{"decide", []string{"issue", "position", "[--basis label]"}, "position responds_to issue; issue not already decided (overturning requires supersede)", true},
+			{"supersede", []string{"issue", "position", "--basis label"}, "issue already decided; basis required; new decision links the prior position", true},
 			{"concede", []string{"node"}, "author owns the node", true},
 			{"retract", []string{"node"}, "author owns the node", true},
 		},
@@ -106,11 +107,11 @@ func Current() Schema {
 		},
 		ErrorEnvelope: "{error: kind, detail: string, node?: id}",
 		Envelopes: map[string]string{
-			"IssueStatus": "{issue, issue_text, cardinality, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool}], undecided: [id], stalemate: bool, advice, decided?: {position, basis, decider, override}}",
+			"IssueStatus": "{issue, issue_text, cardinality, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool}], undecided: [id], stalemate: bool, advice, decided?: {position, basis, decider, override, supersedes?}}",
 			"AgendaView":  "{undecided: [{id, kind, text, label}]}",
 			"MovesView":   "{issue, moves: [{move, args: [string], effect}]}",
 			"WhyView":     "{node, label, because: [{attacker, attacker_label, reason}], to_flip: [{move, args: [string], effect}]}",
-			"ExplainView": "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override}, decision_is_in: bool}",
+			"ExplainView": "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override, supersedes?}, decision_is_in: bool}",
 			"Discussion":  "{id, title, subject, created_by}",
 		},
 	}
@@ -223,12 +224,13 @@ func CUESchema() string {
 }
 
 #Decision: {
-	disc:     string
-	issue:    string
-	position: string
-	basis:    string
-	decider:  string
-	override: bool
+	disc:        string
+	issue:       string
+	position:    string
+	basis:       string
+	decider:     string
+	override:    bool
+	supersedes?: string // prior decided position, when made via supersede
 }
 
 // relation -> schema binding

@@ -115,6 +115,7 @@ Every idea above maps to a command:
 | Back something | Support | `dlktk support <target> "…"` |
 | Break a tie | Preference | `dlktk prefer <winner> <loser> --basis …` |
 | Record the call | Decision | `dlktk decide <issue> <position> --basis …` |
+| Overturn the call | Supersession | `dlktk supersede <issue> <position> --basis …` |
 | See what stands | Grounded labelling | `dlktk status [issue]` |
 | See the shape | The graph | `dlktk tree [issue]` |
 | Understand one label | Local explanation | `dlktk why <node>` |

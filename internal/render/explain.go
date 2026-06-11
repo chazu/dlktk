@@ -388,7 +388,7 @@ func Explain(g *ibis.Graph, fw *af.Framework, issue string, decs []ibis.Decision
 	}
 	for _, d := range decs {
 		if d.Issue == issue {
-			v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override}
+			v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes}
 			v.DecisionIsIN = labels[d.Position] == af.IN
 		}
 	}

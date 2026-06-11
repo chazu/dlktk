@@ -59,13 +59,17 @@ type Preference struct {
 }
 
 // Decision records the act of closing an issue by accepting a position.
+// Supersedes names the previously decided position when this decision was made
+// with the supersede move (design §16 Q4: overturning requires a recorded basis
+// and a link back; a bare re-decide is rejected).
 type Decision struct {
-	Disc     string `json:"disc"`
-	Issue    string `json:"issue"`
-	Position string `json:"position"`
-	Basis    string `json:"basis"`
-	Decider  string `json:"decider"`
-	Override bool   `json:"override"`
+	Disc       string `json:"disc"`
+	Issue      string `json:"issue"`
+	Position   string `json:"position"`
+	Basis      string `json:"basis"`
+	Decider    string `json:"decider"`
+	Override   bool   `json:"override"`
+	Supersedes string `json:"supersedes,omitempty"`
 }
 
 // Discussion is the unit of scope.
