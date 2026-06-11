@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/chazu/dlktk/internal/af"
+	"github.com/chazu/dlktk/internal/check"
 	"github.com/chazu/dlktk/internal/discover"
 	"github.com/chazu/dlktk/internal/fail"
 	"github.com/chazu/dlktk/internal/ibis"
@@ -71,7 +72,7 @@ func root() *cobra.Command {
 		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(), cmdSupersede(),
 		cmdConcede("concede"), cmdConcede("retract"),
 		cmdStatus(), cmdTree(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
-		cmdReplay(), cmdLog(),
+		cmdReplay(), cmdLog(), cmdCheck(),
 		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(),
 	)
 	return c
@@ -397,6 +398,70 @@ func cmdReplay() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&diff, "diff", false, "diff the as-of labelling against now")
+	return c
+}
+
+func cmdCheck() *cobra.Command {
+	var all, strict bool
+	c := &cobra.Command{
+		Use:   "check",
+		Short: "verify standing decisions: drift, stalemates, store invariants (CI-friendly, exit 5 on findings)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			w, err := when()
+			if err != nil {
+				return err
+			}
+			var discs []string
+			if all {
+				ds, err := s.Discussions(w)
+				if err != nil {
+					return err
+				}
+				for _, d := range ds {
+					discs = append(discs, d.ID)
+				}
+			} else {
+				disc, err := resolveDisc()
+				if err != nil {
+					return err
+				}
+				discs = []string{disc}
+			}
+			v, err := check.Run(s, discs, w)
+			if err != nil {
+				return err
+			}
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+			} else {
+				fmt.Print(check.Text(v))
+			}
+			errs, warns := 0, 0
+			for _, f := range v.Findings {
+				if f.Severity == "error" {
+					errs++
+				} else {
+					warns++
+				}
+			}
+			if !v.OK {
+				return fail.New(fail.CodeCheck, "check_failed", "%d error finding(s), %d warning(s)", errs, warns)
+			}
+			if strict && warns > 0 {
+				return fail.New(fail.CodeCheck, "check_failed", "%d warning(s) under --strict", warns)
+			}
+			return nil
+		},
+	}
+	c.Flags().BoolVar(&all, "all", false, "check every discussion in the store (else the current one)")
+	c.Flags().BoolVar(&strict, "strict", false, "fail on warnings (stalemates) too")
 	return c
 }
 

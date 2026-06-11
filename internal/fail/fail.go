@@ -19,6 +19,7 @@ const (
 	CodeIllegal  = 2 // ill-formed / illegal move; nothing written
 	CodeNotFound = 3
 	CodeStore    = 4 // store / engine error
+	CodeCheck    = 5 // check found drift / invariant violations
 )
 
 // Error is a structured dlktk error.

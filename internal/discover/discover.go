@@ -10,9 +10,11 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.4.0 adds the supersede move (bare re-decide
-// is now rejected, design §16 Q4) and the decided.supersedes envelope field.
-const Version = "0.4.0"
+// Version of the dlktk contract. 0.5.0 adds the check read (decision drift /
+// stalemate / store-invariant verification, exit 5) on top of 0.4.0's
+// supersede move (bare re-decide rejected, design §16 Q4) and
+// decided.supersedes envelope field.
+const Version = "0.5.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -97,6 +99,7 @@ func Current() Schema {
 			{"explain", []string{"issue"}, "ExplainView", false},
 			{"tree", []string{"[issue]"}, "text", false},
 			{"list", nil, "[Discussion]", false},
+			{"check", []string{"[--all]", "[--strict]"}, "CheckView", false},
 			{"discover", nil, "Schema (this document)", false},
 		},
 		Errors: []ErrCode{
@@ -104,6 +107,7 @@ func Current() Schema {
 			{2, "illegal_move", "ill-formed or illegal move; nothing was written"},
 			{3, "not_found", "a referenced discussion/issue/node id does not exist"},
 			{4, "store_error", "storage or engine failure"},
+			{5, "check_failed", "check found decision drift or invariant violations (warnings too, under --strict)"},
 		},
 		ErrorEnvelope: "{error: kind, detail: string, node?: id}",
 		Envelopes: map[string]string{
@@ -112,6 +116,7 @@ func Current() Schema {
 			"MovesView":   "{issue, moves: [{move, args: [string], effect}]}",
 			"WhyView":     "{node, label, because: [{attacker, attacker_label, reason}], to_flip: [{move, args: [string], effect}]}",
 			"ExplainView": "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override, supersedes?}, decision_is_in: bool}",
+			"CheckView":   "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate, severity: error|warning, discussion, issue?, node?, detail}], ok: bool}",
 			"Discussion":  "{id, title, subject, created_by}",
 		},
 	}

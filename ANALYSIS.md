@@ -95,11 +95,12 @@ to 4; covered by tests.
 
 In rough order of impact:
 
-1. **`dlktk check` — a CI verb for decision drift.** Exit nonzero when a standing
-   decision's position is no longer IN, when a stalemate lingers, or when store
-   invariants are violated. Ship a GitHub Action around it. This turns recorded
-   decisions from archaeology into living constraints — the strongest adoption lever —
-   and `replay --diff` already computes the core.
+1. **`dlktk check` — a CI verb for decision drift.** **[implemented on this branch]**
+   Exit 5 when a standing decision's position is no longer IN, when stored preferences
+   are cyclic, or when store invariants are violated; `--strict` also fails on
+   lingering stalemates; `--all` covers the whole store. This turns recorded decisions
+   from archaeology into living constraints — the strongest adoption lever. The repo's
+   CI now runs it against the shipped `examples/` dialectics on every PR.
 2. **An MCP server (`dlktk serve --mcp`).** The discover schema already defines the
    moves/reads with legality strings and envelopes; generating MCP tool definitions
    from it is mostly mechanical. It makes every agent harness a client and resolves the
@@ -140,8 +141,9 @@ In rough order of impact:
   end-to-end CLI test replaying the INTRODUCTION example, an export→import round-trip
   test, a determinism test (run twice, byte-compare). The `examples/*.ndjson` files are
   ready-made fixtures.
-- **CI:** no `.github/workflows`. Build + vet + test on PR, in both `GOWORK=off` and
-  workspace modes (the README promises both work).
+- **CI:** **[implemented on this branch]** `.github/workflows/ci.yml` runs vet + test +
+  build on PR, plus the dialectics dogfood job (import `examples/`, `check --all
+  --strict`).
 - **License is TBD** — blocks any external adoption outright.
 - **`.dlktk/current` is written to whatever cwd you run from**, polluting arbitrary
   directories. Walk up to the git/pudl workspace root like `.pudl` discovery does, and
@@ -152,9 +154,10 @@ In rough order of impact:
 
 ## Suggested sequencing
 
-1. **Bug fixes + tests** (§1 — this branch): determinism sort, `supersede` move,
-   import validation + cycle fail-loud, exit-code audit.
-2. **`check` + GitHub Action** (§3.1).
+1. **Bug fixes + tests** (§1) — *done on this branch*: determinism sort, `supersede`
+   move, import validation + cycle fail-loud, exit-code audit.
+2. **`check` + CI** (§3.1) — *done on this branch*: the `check` verb (exit 5) and a
+   workflow that tests the code and drift-checks the example dialectics.
 3. **MCP server + reference harness** (§3.2–3.3) — what makes "robust agentic
    exploration" real rather than aspirational.
 4. **Identity/roster + full-history export** (§2) — completes the trust story.

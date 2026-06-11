@@ -322,6 +322,9 @@ dlktk
 
   replay     <issue> --as-of <T> [--diff]      labelling at T (and what changed since)
   log        [<node>]                           tt history (audit trail)
+  check      [--all] [--strict]                 verify standing decisions: drift /
+                                                stalemates / store invariants (exit 5
+                                                on findings; CI-friendly)
 
   export     [--format ndjson]                 dump moves for git review
   import     <file>                             load moves (idempotent by node id)
