@@ -2,6 +2,8 @@
 // move-legality rules (part of L4). It knows nothing of storage or the CLI.
 package ibis
 
+import "sort"
+
 // Kind enumerates node kinds.
 type Kind string
 
@@ -130,4 +132,16 @@ func NewGraph(nodes []Node, links []Link, prefs []Preference, cards []IssueCard)
 func (g *Graph) IsAFNode(nodeID string) bool {
 	n, ok := g.Nodes[nodeID]
 	return ok && (n.Kind == Position || n.Kind == Argument)
+}
+
+// Issues returns the graph's issue ids in canonical (sorted) order.
+func (g *Graph) Issues() []string {
+	var out []string
+	for id, n := range g.Nodes {
+		if n.Kind == Issue {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

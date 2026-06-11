@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/chazu/dlktk/internal/fail"
 	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/id"
+	"github.com/chazu/dlktk/internal/mcpserv"
 	"github.com/chazu/dlktk/internal/proto"
 	"github.com/chazu/dlktk/internal/render"
 	"github.com/chazu/dlktk/internal/store"
@@ -73,7 +75,7 @@ func root() *cobra.Command {
 		cmdConcede("concede"), cmdConcede("retract"),
 		cmdStatus(), cmdTree(), cmdShow(), cmdSearch(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
 		cmdReplay(), cmdLog(), cmdCheck(),
-		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(),
+		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(), cmdMCP(),
 	)
 	return c
 }
@@ -669,6 +671,22 @@ func cmdImport() *cobra.Command {
 	}
 }
 
+func cmdMCP() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp",
+		Short: "serve dlktk over the Model Context Protocol (stdio)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			return mcpserv.Serve(cmd.Context(), s, author(), &mcp.StdioTransport{})
+		},
+	}
+}
+
 func cmdSchema() *cobra.Command {
 	return &cobra.Command{
 		Use:   "schema",
@@ -1136,14 +1154,5 @@ func targetIssues(g *ibis.Graph, args []string) ([]string, error) {
 		}
 		return []string{args[0]}, nil
 	}
-	var issues []string
-	for id, n := range g.Nodes {
-		if n.Kind == ibis.Issue {
-			issues = append(issues, id)
-		}
-	}
-	// Canonical (proquint) order: same inputs must give byte-identical output
-	// (design §8.1); map iteration order must never leak into the envelope.
-	sort.Strings(issues)
-	return issues, nil
+	return g.Issues(), nil
 }

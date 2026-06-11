@@ -101,10 +101,11 @@ In rough order of impact:
    lingering stalemates; `--all` covers the whole store. This turns recorded decisions
    from archaeology into living constraints — the strongest adoption lever. The repo's
    CI now runs it against the shipped `examples/` dialectics on every PR.
-2. **An MCP server (`dlktk serve --mcp`).** The discover schema already defines the
-   moves/reads with legality strings and envelopes; generating MCP tool definitions
-   from it is mostly mechanical. It makes every agent harness a client and resolves the
-   per-process/TOCTOU issues as a bonus (one process, serialized writes).
+2. **An MCP server.** **[implemented on this branch]** `dlktk mcp` serves all moves and
+   reads over MCP stdio (official Go SDK), returning the same JSON envelopes as the
+   CLI; errors surface as the structured error envelope with `isError`. Moves are
+   serialized under one in-process mutex, closing the §1.4 TOCTOU race for MCP-driven
+   sessions (the multi-process CLI race remains open).
 3. **A reference deliberation harness.** The design correctly scopes out
    who-speaks-when, but viability requires *someone* to ship it. Even an `examples/`
    script that spawns the §11 personas as subagents and alternates moves until `agenda`

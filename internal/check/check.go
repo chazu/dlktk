@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/chazu/dlktk/internal/af"
-	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/render"
 	"github.com/chazu/dlktk/internal/store"
 )
@@ -111,15 +110,7 @@ func runOne(s *store.Store, disc string, w store.When) ([]Finding, error) {
 		return nil, err
 	}
 
-	var issues []string
-	for id, n := range g.Nodes {
-		if n.Kind == ibis.Issue {
-			issues = append(issues, id)
-		}
-	}
-	sort.Strings(issues)
-
-	for _, issue := range issues {
+	for _, issue := range g.Issues() {
 		st := render.Status(g, fw, labels, issue, decs)
 		if d := st.Decided; d != nil && !d.Override {
 			// The position was IN when decided (no override flag); if it is no

@@ -327,7 +327,8 @@ dlktk
                                                 on findings; CI-friendly)
 
   export     [--format ndjson]                 dump moves for git review
-  import     <file>                             load moves (idempotent by node id)
+  import     <file>                             load moves (validated; idempotent by node id)
+  mcp                                            serve the verb set over MCP stdio (agent harnesses)
   discover                                       machine-readable capability schema
   doctor                                         self-check: pudl store resolves, dlktk schema present, fixpoint sanity
 ```
