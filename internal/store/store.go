@@ -25,9 +25,22 @@ const (
 	relDecision   = "dlktk/decision"
 )
 
-// Store wraps a pudl fact store.
+// factOps is the slice of pudl's API that store operations run against. Both
+// *factstore.Store (standalone operations) and *factstore.Tx (operations
+// inside a Move transaction) satisfy it.
+type factOps interface {
+	AddFact(f factstore.Fact) (factstore.Fact, error)
+	QueryFacts(filter factstore.FactFilter) ([]factstore.Fact, error)
+	RetractFact(id string) error
+	InvalidateFact(id string) error
+	FactHistory(relation string) ([]factstore.Fact, error)
+}
+
+// Store wraps a pudl fact store — or, inside a Move callback, a single pudl
+// transaction presenting the same read/write surface.
 type Store struct {
-	fs *factstore.Store
+	fs  *factstore.Store // nil on the transactional view passed to a Move callback
+	ops factOps
 }
 
 // Open opens (or creates) the pudl store at dir.
@@ -36,11 +49,32 @@ func Open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, fail.Store("open pudl store: %v", err)
 	}
-	return &Store{fs: fs}, nil
+	return &Store{fs: fs, ops: fs}, nil
 }
 
 // Close releases the store.
 func (s *Store) Close() error { return s.fs.Close() }
+
+// Move runs fn against a transactional view of the store: every read and
+// write fn performs happens inside one pudl transaction that holds the store
+// write lock from the start, so a move's legality check cannot interleave
+// with another agent's write — in this process or another (closes the
+// check-then-write TOCTOU race, ANALYSIS §1.4). An error from fn rolls back
+// every write fn made.
+func (s *Store) Move(fn func(txs *Store) error) error {
+	if s.fs == nil {
+		return fail.Store("nested move transaction")
+	}
+	var fnErr error
+	err := s.fs.Transact(func(tx *factstore.Tx) error {
+		fnErr = fn(&Store{ops: tx})
+		return fnErr
+	})
+	if err != nil && err != fnErr {
+		return fail.Store("move transaction: %v", err)
+	}
+	return err
+}
 
 // add marshals payload as a fact's args and appends it. source carries author.
 func (s *Store) add(relation string, payload any, source string) error {
@@ -48,7 +82,7 @@ func (s *Store) add(relation string, payload any, source string) error {
 	if err != nil {
 		return fail.Store("marshal %s args: %v", relation, err)
 	}
-	_, err = s.fs.AddFact(factstore.Fact{Relation: relation, Args: string(b), Source: source})
+	_, err = s.ops.AddFact(factstore.Fact{Relation: relation, Args: string(b), Source: source})
 	if err != nil {
 		return fail.Store("add %s fact: %v", relation, err)
 	}
@@ -69,7 +103,7 @@ func Now() When { return When{} }
 // scan returns the facts for a relation at the given temporal viewpoint,
 // unmarshalling each args object into a fresh T.
 func scan[T any](s *Store, relation string, w When) ([]T, error) {
-	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relation, TxAt: w.Tx, ValidAt: w.Valid})
+	facts, err := s.ops.QueryFacts(factstore.FactFilter{Relation: relation, TxAt: w.Tx, ValidAt: w.Valid})
 	if err != nil {
 		return nil, fail.Store("query %s: %v", relation, err)
 	}
@@ -158,7 +192,7 @@ func (s *Store) Graph(disc string, w When) (*ibis.Graph, error) {
 // SupersedeDecision invalidates (closes the vt interval of) any current decision
 // on the given issue, so a fresh decide supersedes it. No-op if none stands.
 func (s *Store) SupersedeDecision(disc, issue string) error {
-	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relDecision})
+	facts, err := s.ops.QueryFacts(factstore.FactFilter{Relation: relDecision})
 	if err != nil {
 		return fail.Store("query decisions: %v", err)
 	}
@@ -168,7 +202,7 @@ func (s *Store) SupersedeDecision(disc, issue string) error {
 			continue
 		}
 		if d.Disc == disc && d.Issue == issue {
-			if err := s.fs.InvalidateFact(f.ID); err != nil {
+			if err := s.ops.InvalidateFact(f.ID); err != nil {
 				return fail.Store("invalidate prior decision on %s: %v", issue, err)
 			}
 		}
@@ -180,7 +214,7 @@ func (s *Store) SupersedeDecision(disc, issue string) error {
 // args.id == nid (the concede/retract move). The current fact is the one pudl
 // returns under AsOfNow; there must be at most one (design §3.1).
 func (s *Store) RetractNode(nid string) error {
-	facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: relNode})
+	facts, err := s.ops.QueryFacts(factstore.FactFilter{Relation: relNode})
 	if err != nil {
 		return fail.Store("query nodes: %v", err)
 	}
@@ -202,7 +236,7 @@ func (s *Store) RetractNode(nid string) error {
 	if matches > 1 {
 		return fail.Store("node %s is current in %d facts (store invariant violated)", nid, matches)
 	}
-	if err := s.fs.RetractFact(target); err != nil {
+	if err := s.ops.RetractFact(target); err != nil {
 		return fail.Store("retract node %s: %v", nid, err)
 	}
 	return nil
@@ -230,7 +264,7 @@ func (s *Store) Export(disc string) ([]ExportRecord, error) {
 	issueIDs := map[string]bool{}
 
 	emit := func(rel string, keep func(map[string]any) bool) error {
-		facts, err := s.fs.QueryFacts(factstore.FactFilter{Relation: rel})
+		facts, err := s.ops.QueryFacts(factstore.FactFilter{Relation: rel})
 		if err != nil {
 			return fail.Store("export %s: %v", rel, err)
 		}
@@ -306,7 +340,7 @@ func (s *Store) ExportHistory(disc string) ([]ExportRecord, error) {
 	issueIDs := map[string]bool{}
 
 	collect := func(rel string, keep func(map[string]any) bool) error {
-		facts, err := s.fs.FactHistory(rel)
+		facts, err := s.ops.FactHistory(rel)
 		if err != nil {
 			return fail.Store("history export %s: %v", rel, err)
 		}
@@ -381,7 +415,7 @@ func (s *Store) ExportHistory(disc string) ([]ExportRecord, error) {
 // applyEvent replays one retract/invalidate event. Already-applied events are
 // skipped, so re-importing a history stream converges.
 func (s *Store) applyEvent(rec ExportRecord) error {
-	facts, err := s.fs.FactHistory(rec.Relation)
+	facts, err := s.ops.FactHistory(rec.Relation)
 	if err != nil {
 		return fail.Store("replay %s: %v", rec.Event, err)
 	}
@@ -394,14 +428,14 @@ func (s *Store) applyEvent(rec ExportRecord) error {
 			if f.TxEnd != nil {
 				return nil // already retracted
 			}
-			if err := s.fs.RetractFact(f.ID); err != nil {
+			if err := s.ops.RetractFact(f.ID); err != nil {
 				return fail.Store("replay retract %s: %v", f.ID, err)
 			}
 		case EventInvalidate:
 			if f.ValidEnd != nil {
 				return nil // already invalidated
 			}
-			if err := s.fs.InvalidateFact(f.ID); err != nil {
+			if err := s.ops.InvalidateFact(f.ID); err != nil {
 				return fail.Store("replay invalidate %s: %v", f.ID, err)
 			}
 		}
@@ -417,7 +451,7 @@ func (s *Store) Import(rec ExportRecord) error {
 	if !strings.HasPrefix(rec.Relation, "dlktk/") {
 		return &ibis.IllegalMove{Detail: fmt.Sprintf("refusing to import non-dlktk relation %q", rec.Relation)}
 	}
-	_, err := s.fs.AddFact(factstore.Fact{
+	_, err := s.ops.AddFact(factstore.Fact{
 		Relation:   rec.Relation,
 		Args:       string(rec.Args),
 		Source:     rec.Source,
@@ -435,7 +469,10 @@ func (s *Store) Import(rec ExportRecord) error {
 // record must be a known dlktk relation with well-formed args, and the batch's
 // preferences — combined with what the store already holds — must stay acyclic
 // (a cycle would collapse the closure to all-prefer-all, §16 Q2). Validation
-// errors are IllegalMove (exit 2) and nothing is written.
+// errors are IllegalMove (exit 2) and nothing is written. The store-level
+// check and the writes run in one Move transaction, so a concurrent writer
+// cannot slip a conflicting preference between the acyclicity check and the
+// batch landing, and a mid-batch failure rolls back the whole batch.
 func (s *Store) ImportAll(recs []ExportRecord) (int, error) {
 	prefsByDisc := map[string][]ibis.Preference{}
 	for i, rec := range recs {
@@ -443,26 +480,32 @@ func (s *Store) ImportAll(recs []ExportRecord) (int, error) {
 			return 0, err
 		}
 	}
-	for disc, incoming := range prefsByDisc {
-		existing, err := s.Preferences(disc, Now())
-		if err != nil {
-			return 0, err
-		}
-		if node, cyclic := af.PreferenceCycle(append(existing, incoming...)); cyclic {
-			return 0, &ibis.IllegalMove{Node: node, Detail: fmt.Sprintf(
-				"import would create a preference cycle through %s in discussion %s; nothing imported", node, disc)}
-		}
-	}
-	for _, rec := range recs {
-		if rec.Event != "" {
-			if err := s.applyEvent(rec); err != nil {
-				return 0, err
+	err := s.Move(func(txs *Store) error {
+		for disc, incoming := range prefsByDisc {
+			existing, err := txs.Preferences(disc, Now())
+			if err != nil {
+				return err
 			}
-			continue
+			if node, cyclic := af.PreferenceCycle(append(existing, incoming...)); cyclic {
+				return &ibis.IllegalMove{Node: node, Detail: fmt.Sprintf(
+					"import would create a preference cycle through %s in discussion %s; nothing imported", node, disc)}
+			}
 		}
-		if err := s.Import(rec); err != nil {
-			return 0, err
+		for _, rec := range recs {
+			if rec.Event != "" {
+				if err := txs.applyEvent(rec); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := txs.Import(rec); err != nil {
+				return err
+			}
 		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
 	return len(recs), nil
 }
@@ -588,7 +631,7 @@ type HistoryEntry struct {
 func (s *Store) History(disc, nodeID string) ([]HistoryEntry, error) {
 	var out []HistoryEntry
 	for _, rel := range []string{relNode, relLink, relPreference, relDecision} {
-		facts, err := s.fs.FactHistory(rel)
+		facts, err := s.ops.FactHistory(rel)
 		if err != nil {
 			return nil, fail.Store("history %s: %v", rel, err)
 		}

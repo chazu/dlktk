@@ -34,7 +34,7 @@ Agent commands: `discover` (CUE/JSON capability schema), `agenda` (live UNDEC se
 
 Decisions are closing acts: a bare re-`decide` on a decided issue is rejected; overturning one is `supersede <issue> <position> --basis <label>`, which records why and links the prior decision.
 
-Postmortem: `replay <issue> --as-of T [--diff]` (labelling as it stood at T, and what changed since), `--valid-at T` (which decisions were in force), `log [node]` (transaction-time audit trail). Git-native: `export` (NDJSON move log; `--history` adds retract/invalidate events so the full audit trail replays) / `import` (validated, idempotent by content), `schema` (the `pudl/dlktk` CUE), `anchored <ref>` (discussions governing a code artifact).
+Postmortem: `replay <issue> --as-of T [--diff]` (labelling as it stood at T, and what changed since), `--valid-at T` (which decisions were in force), `log [node]` (transaction-time audit trail). Git-native: `export` (NDJSON move log; `--history` adds retract/invalidate events so the full audit trail replays) / `import` (validated, idempotent by content), `schema` (the `pudl/dlktk` CUE; built into pudl ≥ v0.1.3), `anchored <ref>` (discussions governing a code artifact).
 
 MCP: `dlktk mcp` serves the same verb set over the Model Context Protocol (stdio) — one tool per move/read, returning the identical JSON envelopes — so any MCP-capable agent harness can drive a dialectic without shelling out. Moves are serialized in-process, which also closes the legality-check/write race concurrent CLI invocations have. Example client config:
 

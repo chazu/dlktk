@@ -189,7 +189,10 @@ func sortedKeys(m map[string]string) []string {
 
 // CUESchema renders the `pudl/dlktk` CUE package: the typed args shape of every
 // dlktk/* relation, so pudl and other tools can validate/interpret dlktk facts
-// (design §3.7). Install it under the pudl schema dir to register the package.
+// (design §3.7). pudl >= v0.1.3 ships this package as a built-in bootstrap
+// schema (registered automatically); on older pudl versions, install the output
+// under the pudl schema dir to register it. Keep this copy and pudl's
+// internal/importer/bootstrap/pudl/dlktk/dlktk.cue in lockstep.
 func CUESchema() string {
 	return `package dlktk
 

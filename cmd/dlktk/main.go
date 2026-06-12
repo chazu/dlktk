@@ -699,7 +699,15 @@ func cmdSchema() *cobra.Command {
 	return &cobra.Command{
 		Use:   "schema",
 		Short: "emit the pudl/dlktk CUE schema for dlktk/* fact relations",
-		Args:  cobra.NoArgs,
+		Long: `Emit the pudl/dlktk CUE schema package: the typed args shape of every
+dlktk/* fact relation.
+
+pudl >= v0.1.3 ships this package as a built-in bootstrap schema, registered
+automatically on pudl init/import — no manual install needed. On older pudl
+versions, write the output under the pudl schema dir (pudl/dlktk/dlktk.cue)
+to register it. The two copies are maintained in lockstep; this command is
+the reference for inspection and for keeping pudl's copy in sync.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Print(discover.CUESchema())
 			return nil
