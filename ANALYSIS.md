@@ -62,14 +62,20 @@ batch (known relations, well-formed args, preference acyclicity against the comb
 store + batch) before writing anything, and `af.Build` fails loud on a preference cycle
 in stored data (store-invariant violation, exit 4) rather than computing nonsense.
 
-### 1.4 TOCTOU between legality check and write **[mitigated, open]**
+### 1.4 TOCTOU between legality check and write **[fixed]**
 
-Every move is read-graph → check → write as separate store operations. Two concurrent
-agents running `prefer A B` and `prefer B A` can both pass the cycle check and both
+Every move was read-graph → check → write as separate store operations. Two concurrent
+agents running `prefer A B` and `prefer B A` could both pass the cycle check and both
 land, producing the corrupt state of §1.3 with no import needed. The §1.3 read-time
 fail-loud is the backstop (the store can no longer *silently* serve contradictory
-labellings), but the real fix is check-and-write inside one transaction, which likely
-needs a small pudl API addition. Tracked as open.
+labellings), but the real fix is check-and-write inside one transaction, which needed
+a small pudl API addition. Fix: pudl ≥ v0.1.3 exposes `factstore.Store.Transact`
+(reads and writes inside one immediate-mode SQLite transaction holding the write
+lock from BEGIN); `store.Move` wraps it, and every move in `internal/proto` — plus
+`ImportAll`'s acyclicity-check-then-write — now runs its whole legality-check +
+write span inside one transaction. The race is closed across processes, not just
+within one (covered by a concurrent `prefer A B` / `prefer B A` test asserting
+exactly one writer wins), and a mid-move failure rolls the whole move back.
 
 ### 1.5 Exit-code inconsistencies **[fixed]**
 
@@ -106,8 +112,8 @@ In rough order of impact:
 2. **An MCP server.** **[implemented on this branch]** `dlktk mcp` serves all moves and
    reads over MCP stdio (official Go SDK), returning the same JSON envelopes as the
    CLI; errors surface as the structured error envelope with `isError`. Moves are
-   serialized under one in-process mutex, closing the §1.4 TOCTOU race for MCP-driven
-   sessions (the multi-process CLI race remains open).
+   serialized under one in-process mutex — now belt-and-braces, since the §1.4 fix
+   serializes check-and-write at the store layer across processes too.
 3. **A reference deliberation harness.** **[implemented on this branch]** `AGENTS.md`
    is the drop-in playbook (the loop, move discipline, personas, stopping conditions,
    exit codes), and `examples/deliberate.sh` demonstrates the multi-persona mechanics
