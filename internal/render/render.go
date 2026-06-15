@@ -139,28 +139,68 @@ func advise(st IssueStatus) string {
 // StatusText renders an issue status as human text.
 func StatusText(st IssueStatus) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "issue %s  %q  [%s]\n", st.Issue, st.IssueText, st.Cardinality)
+	fmt.Fprintf(&b, "%s %s  %s  %s\n",
+		cBold("issue"), cID(ibis.PrefixFor(ibis.Issue)+st.Issue), quote(st.IssueText), cDim("["+st.Cardinality+"]"))
+	if len(st.Positions) == 0 {
+		b.WriteString("  " + cDim("(no positions yet — propose one)") + "\n")
+	}
 	for _, p := range st.Positions {
-		fmt.Fprintf(&b, "  %-5s %s  %q", p.Label, ibis.PrefixFor(ibis.Position)+p.ID, p.Text)
-		if len(p.DefeatedBy) > 0 {
-			fmt.Fprintf(&b, "  (defeated by %s)", strings.Join(p.DefeatedBy, ", "))
-		} else if p.Reinstated {
-			fmt.Fprint(&b, "  (reinstated)")
+		prefix := fmt.Sprintf("  %s %s  ", labelCol(p.Label), pid(p.ID))
+		b.WriteString(para(prefix, quote(p.Text)) + "\n")
+		if note := positionNote(p); note != "" {
+			b.WriteString(strings.Repeat(" ", visLen(prefix)) + cDim(note) + "\n")
 		}
-		b.WriteByte('\n')
 	}
-	if st.Decided != nil {
+	if d := st.Decided; d != nil {
+		ptext := ""
+		for _, p := range st.Positions {
+			if p.ID == d.Position {
+				ptext = p.Text
+			}
+		}
 		flag := ""
-		if st.Decided.Override {
-			flag = " (OVERRIDE — was not IN at decision time)"
+		if d.Override {
+			flag += cDim(" (OVERRIDE — was not IN at decision time)")
 		}
-		if st.Decided.Supersedes != "" {
-			flag += fmt.Sprintf(" (supersedes %s)", st.Decided.Supersedes)
+		if d.Supersedes != "" {
+			flag += cDim(fmt.Sprintf(" (supersedes %s)", d.Supersedes))
 		}
-		fmt.Fprintf(&b, "  ✓ decided: %s by %s%s\n", st.Decided.Position, st.Decided.Decider, flag)
+		fmt.Fprintf(&b, "  %s: %s", labelColor("IN", "✓ decided"), pid(d.Position))
+		if ptext != "" {
+			fmt.Fprintf(&b, "  %s", quote(ptext))
+		}
+		fmt.Fprintf(&b, "  %s%s\n", cDim("by "+d.Decider), flag)
 	}
-	fmt.Fprintf(&b, "  → %s\n", st.Advice)
+	fmt.Fprintf(&b, "  %s %s\n", cBold("→"), st.Advice)
 	return b.String()
+}
+
+// positionNote explains a position's label in one short, dimmable phrase.
+func positionNote(p PositionView) string {
+	switch p.Label {
+	case "IN":
+		if p.Reinstated {
+			return "reinstated — an attacker was itself defeated"
+		}
+		return "justified — no surviving attacker"
+	case "OUT":
+		if len(p.DefeatedBy) > 0 {
+			return "defeated by " + joinIDs(p.DefeatedBy)
+		}
+		return "defeated"
+	case "UNDEC":
+		return "contested — needs an argument or preference"
+	}
+	return ""
+}
+
+// joinIDs renders a comma-separated id list, each colored as an id.
+func joinIDs(ids []string) string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = cID(id)
+	}
+	return strings.Join(out, ", ")
 }
 
 // JSON marshals any view as indented JSON.
@@ -267,13 +307,13 @@ func (t *treeWriter) legend() string {
 	}
 	if t.opts.Labels {
 		parts = append(parts,
-			t.glyph("✓", "+")+" IN",
-			t.glyph("✗", "-")+" OUT",
-			"? UNDEC",
-			t.glyph("↩", "^")+" reinstated",
+			labelColor("IN", t.glyph("✓", "+")+" IN"),
+			labelColor("OUT", t.glyph("✗", "-")+" OUT"),
+			labelColor("UNDEC", "? UNDEC"),
+			labelColor("IN", t.glyph("↩", "^")+" reinstated"),
 		)
 	}
-	return "legend: " + strings.Join(parts, "  ")
+	return cDim("legend: ") + strings.Join(parts, "  ")
 }
 
 // write emits one node and recurses into its children. prefix is the accumulated
@@ -335,9 +375,10 @@ func (t *treeWriter) writeBody(node string, rel ibis.Rel, prefix, connector, chi
 	}
 
 	// Text column starts after prefix + connector + head; continuation lines
-	// align there, replacing the connector with the subtree gutter.
-	avail := t.width - runeLen(prefix) - runeLen(connector) - runeLen(head)
-	cont := childGutter + strings.Repeat(" ", runeLen(head))
+	// align there, replacing the connector with the subtree gutter. Widths are
+	// measured ignoring ANSI color so alignment holds when color is on.
+	avail := t.width - visLen(prefix) - visLen(connector) - visLen(head)
+	cont := childGutter + strings.Repeat(" ", visLen(head))
 
 	var lines []string
 	if t.opts.NoWrap {
@@ -347,10 +388,10 @@ func (t *treeWriter) writeBody(node string, rel ibis.Rel, prefix, connector, chi
 	}
 	// The id/author tail trails the final text line, but only if it fits the
 	// width; otherwise it drops to its own aligned line so nothing overflows.
-	indent := runeLen(prefix) + runeLen(connector) + runeLen(head)
+	indent := visLen(prefix) + visLen(connector) + visLen(head)
 	last := len(lines) - 1
 	inlineTail := tail != "" && (t.opts.NoWrap ||
-		indent+runeLen(lines[last])+runeLen(tail) <= t.width)
+		indent+runeLen(lines[last])+visLen(tail) <= t.width)
 
 	for i, ln := range lines {
 		if i == 0 {
@@ -376,24 +417,24 @@ func (t *treeWriter) badge(node string) string {
 	if t.opts.Labels {
 		switch t.labels[node] {
 		case af.IN:
-			s = t.glyph("✓ ", "+ ")
+			s = labelColor("IN", t.glyph("✓ ", "+ "))
 		case af.OUT:
-			s = t.glyph("✗ ", "- ")
+			s = labelColor("OUT", t.glyph("✗ ", "- "))
 		case af.UNDEC:
-			s = "? "
+			s = labelColor("UNDEC", "? ")
 		}
 	}
 	if t.decided[node] {
-		s += t.glyph("★ ", "@ ")
+		s += cBold(t.glyph("★ ", "@ "))
 	}
 	if t.opts.Labels && t.reinstated[node] {
-		s += t.glyph("↩ ", "^ ")
+		s += labelColor("IN", t.glyph("↩ ", "^ "))
 	}
 	return s
 }
 
 func (t *treeWriter) idSuffix(node string) string {
-	return ibis.PrefixFor(t.g.Nodes[node].Kind) + node
+	return cID(ibis.PrefixFor(t.g.Nodes[node].Kind) + node)
 }
 
 func (t *treeWriter) relGlyph(rel ibis.Rel) string {

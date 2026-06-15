@@ -79,34 +79,37 @@ func linkView(g *ibis.Graph, labels map[string]af.Label, rel ibis.Rel, dir, peer
 // ShowText renders a NodeView as human text.
 func ShowText(v NodeView) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s%s  %q", ibis.PrefixFor(ibis.Kind(v.Kind)), v.ID, v.Text)
-	if v.Author != "" {
-		fmt.Fprintf(&b, "  by %s", v.Author)
-	}
+	header := []string{}
 	if v.Label != "" {
-		fmt.Fprintf(&b, "  [%s]", v.Label)
+		header = append(header, labelInline(v.Label))
 	}
-	b.WriteByte('\n')
+	header = append(header, nid(v.Kind, v.ID))
+	if v.Author != "" {
+		header = append(header, cDim("by "+v.Author))
+	}
+	b.WriteString(strings.Join(header, "  ") + "\n")
+	b.WriteString(para("  ", quote(v.Text)) + "\n")
 	for _, l := range v.Links {
-		arrow := "→"
-		if l.Dir == "in" {
-			arrow = "←"
+		arrow := cDim("←")
+		if l.Dir == "out" {
+			arrow = cDim("→")
 		}
-		fmt.Fprintf(&b, "  %s %-11s %s%s  %q", arrow, l.Rel, ibis.PrefixFor(ibis.Kind(l.PeerKind)), l.Peer, l.PeerText)
+		peerLabel := ""
 		if l.PeerLabel != "" {
-			fmt.Fprintf(&b, "  [%s]", l.PeerLabel)
+			peerLabel = labelInline(l.PeerLabel) + " "
 		}
-		b.WriteByte('\n')
+		prefix := fmt.Sprintf("  %s %s %s%s  ", arrow, cDim(fmt.Sprintf("%-11s", l.Rel)), peerLabel, nid(l.PeerKind, l.Peer))
+		b.WriteString(para(prefix, quote(l.PeerText)) + "\n")
 	}
-	if v.Decided != nil {
+	if d := v.Decided; d != nil {
 		flag := ""
-		if v.Decided.Override {
-			flag = " (OVERRIDE)"
+		if d.Override {
+			flag += cDim(" (OVERRIDE)")
 		}
-		if v.Decided.Supersedes != "" {
-			flag += fmt.Sprintf(" (supersedes %s)", v.Decided.Supersedes)
+		if d.Supersedes != "" {
+			flag += cDim(fmt.Sprintf(" (supersedes %s)", d.Supersedes))
 		}
-		fmt.Fprintf(&b, "  ✓ decided: %s by %s%s\n", v.Decided.Position, v.Decided.Decider, flag)
+		fmt.Fprintf(&b, "  %s %s  %s%s\n", labelColor("IN", "✓ decided:"), pid(d.Position), cDim("by "+d.Decider), flag)
 	}
 	return b.String()
 }

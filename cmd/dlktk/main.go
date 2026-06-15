@@ -18,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 
 	"github.com/chazu/dlktk/internal/af"
 	"github.com/chazu/dlktk/internal/check"
@@ -40,6 +41,7 @@ var (
 	flagAuthor  string
 	flagAsOf    string
 	flagValidAt string
+	flagColor   string
 )
 
 const currentPointer = ".dlktk/current"
@@ -51,6 +53,9 @@ func main() {
 			fmt.Fprintln(os.Stderr, e.JSON())
 		} else {
 			fmt.Fprintf(os.Stderr, "%s: %s\n", e.ErrKind, e.Detail)
+			if h := errorHint(e.ErrKind); h != "" {
+				fmt.Fprintln(os.Stderr, "hint: "+h)
+			}
 		}
 		os.Exit(e.Code())
 	}
@@ -64,12 +69,31 @@ func root() *cobra.Command {
 		SilenceErrors: true,
 	}
 	c.PersistentFlags().StringVarP(&flagDisc, "discussion", "d", "", "discussion id (else $DLKTK_DISC, else ./.dlktk/current)")
-	c.PersistentFlags().StringVar(&flagJSON, "format", "", "output format: text|json")
+	c.PersistentFlags().StringVar(&flagJSON, "format", "", "output format: text|json (default: text on a terminal, json when piped)")
 	c.PersistentFlags().StringVar(&flagStore, "store", "", "pudl store dir (default: repo .pudl/ else ~/.pudl)")
 	c.PersistentFlags().StringVar(&flagAuthor, "author", "", "stable identity attributed to moves and checked for ownership (default: OS user)")
 	c.PersistentFlags().StringVar(&flagRole, "role", "", "persona a move is made under; auto-records an author↔role roster binding (metadata only)")
 	c.PersistentFlags().StringVar(&flagAsOf, "as-of", "", "transaction-time travel: evaluate as of T (RFC3339 or Unix seconds)")
 	c.PersistentFlags().StringVar(&flagValidAt, "valid-at", "", "valid-time: which decisions were in force at T (RFC3339 or Unix seconds)")
+	c.PersistentFlags().StringVar(&flagColor, "color", "auto", "colorize text output: auto|always|never (auto = on for a terminal, off when piped or NO_COLOR is set)")
+
+	// Configure the text renderers once the flags are parsed: color per
+	// --color/NO_COLOR/TTY, and prose wrap width from the terminal.
+	c.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		tty := term.IsTerminal(int(os.Stdout.Fd()))
+		switch flagColor {
+		case "always":
+			render.SetColor(true)
+		case "never":
+			render.SetColor(false)
+		default:
+			render.SetColor(tty && os.Getenv("NO_COLOR") == "")
+		}
+		if tty {
+			render.SetWidth(termWidth())
+		}
+		return nil
+	}
 
 	c.AddCommand(
 		cmdNew(), cmdUse(), cmdList(), cmdRoster(),
@@ -135,9 +159,35 @@ func authorID() string {
 // persona; a non-empty role auto-records the author↔role roster binding.
 func roleOf() string { return flagRole }
 
+// errorHint returns a short next-step suggestion for a failed command, keyed by
+// error kind, so a human sees what to try rather than just what went wrong.
+func errorHint(kind string) string {
+	switch kind {
+	case "illegal_move":
+		return "see legal moves with `dlktk moves <issue>`, or the full contract with `dlktk discover`"
+	case "not_found":
+		return "list the discussion's ids with `dlktk tree` (or `dlktk status`); discussions with `dlktk list`"
+	case "check_failed":
+		return "inspect the drift with `dlktk replay <issue> --diff`; overturn a stale decision with `dlktk supersede`"
+	}
+	return ""
+}
+
 func mover(s *store.Store) *proto.Mover { return proto.New(s, authorID(), roleOf()) }
 
-func wantJSON() bool { return strings.EqualFold(flagJSON, "json") }
+// wantJSON reports whether output should be JSON. Explicit --format wins;
+// otherwise it auto-detects: text on an interactive terminal, JSON when piped
+// (design §6.1) so agents reading stdout get structured output for free.
+func wantJSON() bool {
+	switch strings.ToLower(flagJSON) {
+	case "json":
+		return true
+	case "text":
+		return false
+	default:
+		return !term.IsTerminal(int(os.Stdout.Fd()))
+	}
+}
 
 // resolveDisc resolves the active discussion: -d, then $DLKTK_DISC, then the
 // ./.dlktk/current pointer.

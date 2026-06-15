@@ -32,6 +32,8 @@ dlktk status $I                 # RWLock justified
 
 Agent commands: `discover` (CUE/JSON capability schema), `agenda` (live UNDEC set), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it), `explain <issue>` (full derivation: how attacks/defeats were built and the round-by-round grounded fixpoint that produced the labelling). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store, `5` check-failed).
 
+Output adapts to its consumer: text on a terminal, JSON when piped (override with `--format`). Text output is colorized by grounded label and word-wrapped to the terminal (`--color auto|always|never`, honors `NO_COLOR`); `why` and `moves` print their suggestions as runnable `dlktk …` command lines, and read errors add a one-line `hint:`.
+
 Decisions are closing acts: a bare re-`decide` on a decided issue is rejected; overturning one is `supersede <issue> <position> --basis <label>`, which records why and links the prior decision.
 
 Multi-agent identity: `--author <id>` is the stable identity attributed to a move and the thing `concede`/`retract` ownership is checked against; `--role <persona>` is the optional hat a move is argued under and is kept distinct from identity (two agents sharing a persona still own only their own nodes). The first move under a role auto-records an author↔role binding; `roster` lists the bindings, `roster <author> <role>` pre-declares one (design §16 Q8).

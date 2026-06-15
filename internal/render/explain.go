@@ -213,53 +213,62 @@ func toFlip(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, node st
 // WhyText renders a WhyView as human text.
 func WhyText(v WhyView) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s  %q  is %s\n", v.Node, v.Text, v.Label)
+	b.WriteString(para(fmt.Sprintf("%s  %s  is ", cID(v.Node), quote(v.Text)), labelInline(v.Label)) + "\n")
 	for _, r := range v.Because {
-		fmt.Fprintf(&b, "  ← %s [%s]  %q  (%s)\n", r.Attacker, r.AttackerLabel, r.AttackerText, r.Reason)
+		prefix := fmt.Sprintf("  %s %s %s  ", cDim("←"), labelInline(r.AttackerLabel), cID(r.Attacker))
+		b.WriteString(para(prefix, quote(r.AttackerText)) + "\n")
+		b.WriteString(strings.Repeat(" ", visLen(prefix)) + cDim(r.Reason) + "\n")
 	}
 	if len(v.ToFlip) > 0 {
-		fmt.Fprintln(&b, "  to flip:")
-		for _, m := range v.ToFlip {
-			fmt.Fprintf(&b, "    %s %s — %s\n", m.Move, strings.Join(m.Args, " "), m.Effect)
-		}
+		fmt.Fprintf(&b, "  %s%s\n", cBold("to flip "+v.Node), cDim(" (currently "+v.Label+") — copy, fill the placeholders, run:"))
+		writeSuggestions(&b, v.ToFlip)
 	}
 	return b.String()
 }
 
-// MovesText renders a MovesView.
+// MovesText renders a MovesView as runnable command lines.
 func MovesText(v MovesView) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "legal moves for %s:\n", v.Issue)
-	for _, m := range v.Moves {
-		fmt.Fprintf(&b, "  %s %s — %s\n", m.Move, strings.Join(m.Args, " "), m.Effect)
+	fmt.Fprintf(&b, "%s %s%s\n", cBold("legal moves for"), cID(v.Issue), cDim(" — copy, fill the placeholders, run:"))
+	if len(v.Moves) == 0 {
+		b.WriteString("  " + cDim("(none)") + "\n")
 	}
+	writeSuggestions(&b, v.Moves)
 	return b.String()
+}
+
+// writeSuggestions prints each move suggestion as a runnable command followed by
+// a dimmed one-line effect.
+func writeSuggestions(b *strings.Builder, ms []MoveSuggestion) {
+	for _, m := range ms {
+		b.WriteString("    " + cID(suggestionCommand(m)) + "\n")
+		b.WriteString("      " + cDim(m.Effect) + "\n")
+	}
 }
 
 // AgendaText renders an AgendaView.
 func AgendaText(v AgendaView) string {
 	if len(v.Undecided) == 0 && len(v.Ready) == 0 && len(v.Unpopulated) == 0 {
-		return "agenda empty — nothing contested, nothing awaiting a decision\n"
+		return cDim("agenda empty — nothing contested, nothing awaiting a decision") + "\n"
 	}
 	var b strings.Builder
 	if len(v.Undecided) > 0 {
-		fmt.Fprintln(&b, "live agenda (UNDEC):")
+		b.WriteString(cBold("live agenda (UNDEC) — needs an argument or preference:") + "\n")
 		for _, n := range v.Undecided {
-			fmt.Fprintf(&b, "  %s%s  %q\n", ibis.PrefixFor(ibis.Kind(n.Kind)), n.ID, n.Text)
+			b.WriteString(para(fmt.Sprintf("  %s %s  ", labelInline("UNDEC"), nid(n.Kind, n.ID)), quote(n.Text)) + "\n")
 		}
 	}
 	if len(v.Ready) > 0 {
-		fmt.Fprintln(&b, "ready to decide:")
+		b.WriteString(cBold("ready to decide:") + "\n")
 		for _, r := range v.Ready {
-			fmt.Fprintf(&b, "  %s%s  %q  → %s%s  %q\n",
-				ibis.PrefixFor(ibis.Issue), r.Issue, r.Text,
-				ibis.PrefixFor(ibis.Position), r.Position, r.PositionText)
+			b.WriteString(para(fmt.Sprintf("  %s  ", cID(ibis.PrefixFor(ibis.Issue)+r.Issue)), quote(r.Text)) + "\n")
+			fmt.Fprintf(&b, "      %s %s  %s\n", cDim("→ decide"), pid(r.Position), quote(r.PositionText))
 		}
 	}
 	if len(v.Unpopulated) > 0 {
-		fmt.Fprintln(&b, "no positions yet (propose one):")
+		b.WriteString(cBold("no positions yet (propose one):") + "\n")
 		for _, r := range v.Unpopulated {
-			fmt.Fprintf(&b, "  %s%s  %q\n", ibis.PrefixFor(ibis.Issue), r.Issue, r.Text)
+			b.WriteString(para(fmt.Sprintf("  %s  ", cID(ibis.PrefixFor(ibis.Issue)+r.Issue)), quote(r.Text)) + "\n")
 		}
 	}
 	return b.String()
@@ -313,40 +322,55 @@ func Diff(asOf string, gThen, gNow *ibis.Graph, lThen, lNow map[string]af.Label)
 // DiffText renders a DiffView.
 func DiffText(v DiffView) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "replay diff (as-of %s → now)\n", v.AsOf)
+	fmt.Fprintf(&b, "%s %s\n", cBold("replay diff"), cDim("(as-of "+v.AsOf+" → now)"))
 	if len(v.Added) == 0 && len(v.Removed) == 0 && len(v.Flipped) == 0 {
-		b.WriteString("  no changes\n")
+		b.WriteString("  " + cDim("no changes") + "\n")
 		return b.String()
 	}
 	for _, n := range v.Added {
-		fmt.Fprintf(&b, "  + %s%s  %q  [%s]\n", ibis.PrefixFor(ibis.Kind(n.Kind)), n.ID, n.Text, n.Label)
+		b.WriteString(para(fmt.Sprintf("  %s %s %s  ", labelColor("IN", "+"), labelInline(n.Label), nid(n.Kind, n.ID)), quote(n.Text)) + "\n")
 	}
 	for _, n := range v.Removed {
-		fmt.Fprintf(&b, "  - %s%s  %q\n", ibis.PrefixFor(ibis.Kind(n.Kind)), n.ID, n.Text)
+		b.WriteString(para(fmt.Sprintf("  %s %s  ", labelColor("OUT", "−"), nid(n.Kind, n.ID)), quote(n.Text)) + "\n")
 	}
 	for _, c := range v.Flipped {
-		fmt.Fprintf(&b, "  ~ %s  %s → %s  %q\n", c.Node, c.From, c.To, c.Text)
+		b.WriteString(para(fmt.Sprintf("  %s %s  %s → %s  ", cDim("~"), cID(c.Node), labelInline(c.From), labelInline(c.To)), quote(c.Text)) + "\n")
 	}
 	return b.String()
 }
 
-// LogText renders a store history (audit trail) as human text.
+// LogText renders a store history (audit trail) as human text: an assert/retract
+// marker, an absolute timestamp with a relative hint, the summary (truncated to
+// width), the author, and the node id.
 func LogText(entries []store.HistoryEntry) string {
 	if len(entries) == 0 {
-		return "no history\n"
+		return cDim("no history") + "\n"
 	}
+	now := time.Now()
 	var b strings.Builder
 	for _, e := range entries {
-		state := "+"
+		state := labelColor("IN", "+")
 		if e.Retracted {
-			state = "×"
+			state = labelColor("OUT", "×")
 		}
-		ts := time.Unix(e.TxStart, 0).UTC().Format(time.RFC3339)
-		fmt.Fprintf(&b, "%s %s  %s  %s", state, ts, e.Summary, e.Author)
+		t := time.Unix(e.TxStart, 0)
+		when := cDim(t.UTC().Format("2006-01-02 15:04") + " (" + relTime(t, now) + ")")
+		author := ""
+		if e.Author != "" {
+			author = "  " + cDim("by "+e.Author)
+		}
+		idtag := ""
 		if e.ID != "" {
-			fmt.Fprintf(&b, "  (%s)", e.ID)
+			idtag = "  " + cID(e.ID)
 		}
-		b.WriteByte('\n')
+		summary := e.Summary
+		if wrapWidth > 0 {
+			fixed := visLen(state) + 1 + visLen(when) + 2 + visLen(author) + visLen(idtag)
+			if avail := wrapWidth - fixed; avail >= 12 {
+				summary = truncate(summary, avail)
+			}
+		}
+		fmt.Fprintf(&b, "%s %s  %s%s%s\n", state, when, summary, author, idtag)
 	}
 	return b.String()
 }
@@ -506,7 +530,7 @@ func reachableAF(g *ibis.Graph, issue string) map[string]bool {
 // primer is omitted.
 func ExplainText(v ExplainView, brief bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "explain %s%s  %q  [%s]\n", ibis.PrefixFor(ibis.Issue), v.Issue, v.IssueText, v.Cardinality)
+	fmt.Fprintf(&b, "%s %s  %s  %s\n", cBold("explain"), cID(ibis.PrefixFor(ibis.Issue)+v.Issue), quote(v.IssueText), cDim("["+v.Cardinality+"]"))
 	if !brief {
 		b.WriteString("\nhow this resolves — Dung grounded semantics:\n")
 		b.WriteString("  objections and select_one rivalry become ATTACKS; a preference can DEFEAT\n")
@@ -514,7 +538,7 @@ func ExplainText(v ExplainView, brief bool) string {
 		b.WriteString("  OUT (defeated) / UNDEC (contested). Positions left IN are the standing answer.\n")
 	}
 
-	pre := func(id string) string { return ibis.PrefixFor(v.kinds[id]) + id }
+	pre := func(id string) string { return cID(ibis.PrefixFor(v.kinds[id]) + id) }
 	preList := func(ids []string) string {
 		out := make([]string, len(ids))
 		for i, id := range ids {
@@ -523,7 +547,7 @@ func ExplainText(v ExplainView, brief bool) string {
 		return strings.Join(out, ", ")
 	}
 
-	b.WriteString("\n1. attacks derived:\n")
+	b.WriteString("\n" + cBold("1. attacks derived:") + "\n")
 	if len(v.Attacks) == 0 {
 		b.WriteString("   (none — no objections or select_one rivalry)\n")
 	}
@@ -552,7 +576,7 @@ func ExplainText(v ExplainView, brief bool) string {
 		}
 	}
 
-	b.WriteString("\n2. automated reasoning — grounded fixpoint:\n")
+	b.WriteString("\n" + cBold("2. automated reasoning — grounded fixpoint:") + "\n")
 	round := 0
 	for _, s := range v.Steps {
 		if s.Round != round {
@@ -572,25 +596,25 @@ func ExplainText(v ExplainView, brief bool) string {
 		default:
 			reason = s.Why
 		}
-		fmt.Fprintf(&b, "     %-5s %s  (%s)\n", s.Label, pre(s.Node), reason)
+		fmt.Fprintf(&b, "     %s %s  %s\n", labelCol(s.Label), pre(s.Node), cDim("("+reason+")"))
 	}
 	if len(v.Steps) == 0 {
-		b.WriteString("   (no positions or arguments yet)\n")
+		b.WriteString("   " + cDim("(no positions or arguments yet)") + "\n")
 	}
 
-	b.WriteString("\n3. outcome:\n")
+	b.WriteString("\n" + cBold("3. outcome:") + "\n")
 	for _, p := range v.Outcome {
 		marker := ""
 		if p.Label == "IN" {
-			marker = "  ← justified"
+			marker = labelColor("IN", "  ← justified")
 		}
-		fmt.Fprintf(&b, "   %-5s %s%s  %q\n", p.Label, ibis.PrefixFor(ibis.Position)+p.ID, marker, p.Text)
+		fmt.Fprintf(&b, "   %s %s%s  %s\n", labelCol(p.Label), pid(p.ID), marker, quote(p.Text))
 	}
 	if v.Decided != nil {
 		if v.DecisionIsIN {
-			fmt.Fprintf(&b, "   ✓ decision recorded: %s (matches the justified position)\n", ibis.PrefixFor(ibis.Position)+v.Decided.Position)
+			fmt.Fprintf(&b, "   %s %s %s\n", labelColor("IN", "✓ decision recorded:"), pid(v.Decided.Position), cDim("(matches the justified position)"))
 		} else {
-			fmt.Fprintf(&b, "   ⚠ decision recorded: %s (OVERRIDE — not the justified position)\n", ibis.PrefixFor(ibis.Position)+v.Decided.Position)
+			fmt.Fprintf(&b, "   %s %s %s\n", labelColor("UNDEC", "⚠ decision recorded:"), pid(v.Decided.Position), cDim("(OVERRIDE — not the justified position)"))
 		}
 	}
 	return b.String()

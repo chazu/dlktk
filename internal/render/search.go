@@ -48,15 +48,16 @@ func Search(disc string, g *ibis.Graph, labels map[string]af.Label, query string
 // SearchText renders a SearchView as human text.
 func SearchText(v SearchView) string {
 	if len(v.Hits) == 0 {
-		return fmt.Sprintf("no nodes match %q\n", v.Query)
+		return cDim(fmt.Sprintf("no nodes match %q", v.Query)) + "\n"
 	}
 	var b strings.Builder
 	for _, h := range v.Hits {
-		fmt.Fprintf(&b, "%s  %s%s", h.Discussion, ibis.PrefixFor(ibis.Kind(h.Kind)), h.ID)
+		label := ""
 		if h.Label != "" {
-			fmt.Fprintf(&b, " [%s]", h.Label)
+			label = labelInline(h.Label) + " "
 		}
-		fmt.Fprintf(&b, "  %q\n", h.Text)
+		prefix := fmt.Sprintf("%s  %s%s  ", cDim(h.Discussion), label, nid(h.Kind, h.ID))
+		b.WriteString(para(prefix, quote(h.Text)) + "\n")
 	}
 	return b.String()
 }

@@ -7,7 +7,8 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/sys v0.42.0
+	golang.org/x/sys v0.43.0
+	golang.org/x/term v0.42.0
 )
 
 require (

@@ -14,8 +14,10 @@ dlktk discover --format json
 
 returns the full capability contract: every move with its legality
 precondition, every read with its JSON envelope, the global flags, and the
-error/exit-code catalog. Pass `--format json` on every read; parse stderr as
-`{error, detail, node?}` on nonzero exit.
+error/exit-code catalog. Output auto-detects: text on a terminal, JSON when
+piped — so a harness reading stdout gets JSON for free. Pass `--format json`
+explicitly anyway for predictability; parse stderr as `{error, detail, node?}`
+on nonzero exit (in a terminal, errors also print a one-line `hint:` for humans).
 
 | exit | meaning |
 |------|---------|
@@ -45,7 +47,10 @@ Over MCP, run `dlktk mcp` — one tool per verb, same envelopes, errors as
 
 To understand a label before contesting it: `why <node>` (attackers with their
 text, and the moves that would flip it), `show <node>` (the node in full),
-`explain <issue>` (the whole derivation, round by round).
+`explain <issue>` (the whole derivation, round by round). In text mode `why` and
+`moves` print the flip suggestions as runnable `dlktk …` command lines with
+`<text>`/`<label>` placeholders to fill; over JSON the same moves arrive as the
+structured `to_flip` / `moves` arrays (`{move, args, effect}`).
 
 ## Move discipline
 

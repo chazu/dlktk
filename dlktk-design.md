@@ -287,7 +287,7 @@ There is **no `edit` move.** A node's `text` is fixed at creation. Corrections a
 ```
 --discussion, -d   discussion id (else: $DLKTK_DISC, else ./.dlktk current pointer)
 --format           text | json   (default: text on a TTY, json when piped)
---json             shorthand for --format=json
+--color            auto | always | never   (auto = color on a TTY, off when piped or NO_COLOR set)
 --as-of            transaction-time travel: evaluate as the graph stood at T
 --valid-at         valid-time: which decisions were in force at T
 --author           stable identity attributed to moves and checked for ownership (default: OS user; §11, §16 Q6)
@@ -295,7 +295,7 @@ There is **no `edit` move.** A node's `text` is fixed at creation. Corrections a
 --store            path to the pudl store dir (default: repo .pudl/ via DiscoverWorkspace, else ~/.pudl)
 ```
 
-`--format` auto-detection (isatty) means humans get pretty output and pipes get JSON with zero ceremony; agents should still pass `--json` explicitly for predictability.
+`--format` auto-detection (isatty) means humans get pretty output and pipes get JSON with zero ceremony; agents should still pass `--format json` explicitly for predictability. Text output is colorized (grounded labels `IN`/`OUT`/`UNDEC` in green/red/yellow, ids dimmed) when stdout is a TTY and `NO_COLOR` is unset; `--color always|never` overrides. In text mode `why`/`moves` render their suggestions as runnable `dlktk …` command lines, and read errors print a `hint:` next-step line.
 
 ### 6.2 Command tree
 

@@ -10,7 +10,9 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.8.0 splits --author (ownership identity) from
+// Version of the dlktk contract. 0.9.0 documents the --color global and the
+// --format auto-detect (text on a terminal, json when piped). 0.8.0 splits
+// --author (ownership identity) from
 // --role (persona), adds the dlktk/roster binding with auto-record on every
 // move under a role plus the roster move/read, and makes concede/retract
 // ownership ride on the author identity (design §16 Q6/Q8). 0.7.0 adds the
@@ -20,7 +22,7 @@ import (
 // drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
 // supersede move (bare re-decide rejected, design §16 Q4) and
 // decided.supersedes.
-const Version = "0.8.0"
+const Version = "0.9.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -79,7 +81,8 @@ func Current() Schema {
 		Rels:    []string{"responds_to", "supports", "objects_to"},
 		Labels:  []string{"IN", "OUT", "UNDEC"},
 		Globals: []Flag{
-			{"--format text|json", "output format (json gives the envelopes below)"},
+			{"--format text|json", "output format; default auto: text on a terminal, json when piped (json gives the envelopes below)"},
+			{"--color auto|always|never", "colorize text output (auto = on for a terminal, off when piped or NO_COLOR is set)"},
 			{"--discussion|-d id", "target discussion (else $DLKTK_DISC, else ./.dlktk/current)"},
 			{"--author name", "stable identity attributed to moves and checked for ownership (default: OS user)"},
 			{"--role name", "persona a move is made under; auto-records an author↔role roster binding (metadata only)"},

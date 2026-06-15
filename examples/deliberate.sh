@@ -11,6 +11,10 @@ set -euo pipefail
 
 DLKTK=${DLKTK:-dlktk}
 STORE=${1:-$(mktemp -d)}
+# Force the human view for the display steps: output is piped here, so without
+# --format text the reads would auto-switch to JSON; --color always keeps the
+# formatted/colored output visible in CI logs (and a terminal).
+VIEW="--format text --color always"
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 move() { # move <role> <verb> [args...] -> node id on stdout
   # Each persona is a distinct agent: --author is its stable identity (and what
@@ -25,38 +29,38 @@ DISC=$("$DLKTK" new "cache lock choice" --subject "q:lock for the read cache" --
 ISSUE=$(move shipper raise "which lock for the read cache?")
 
 say "agenda: the issue has no positions yet"
-"$DLKTK" agenda -d "$DISC" --store "$STORE"
+"$DLKTK" agenda -d "$DISC" --store "$STORE" $VIEW
 
 say "shipper and maintainer propose rival positions"
 MUTEX=$(move shipper propose "$ISSUE" "plain mutex — simplest thing that works")
 RWLOCK=$(move maintainer propose "$ISSUE" "RWLock — readers should not serialize")
 
 say "status: a symmetric tie — the engine says so"
-"$DLKTK" status "$ISSUE" -d "$DISC" --store "$STORE"
+"$DLKTK" status "$ISSUE" -d "$DISC" --store "$STORE" $VIEW
 
 say "security checks for prior art before arguing (search), then objects"
-"$DLKTK" search "starvation" -d "$DISC" --store "$STORE"
+"$DLKTK" search "starvation" -d "$DISC" --store "$STORE" $VIEW
 STARVE=$(move security object "$RWLOCK" "writer starvation under sustained read load")
 
 say "maintainer rebuts the objection (defend by counter-attack)"
 move maintainer object "$STARVE" "cache is 99% reads; starvation cannot occur" >/dev/null
 
 say "moves: what the engine considers useful next"
-"$DLKTK" moves "$ISSUE" -d "$DISC" --store "$STORE"
+"$DLKTK" moves "$ISSUE" -d "$DISC" --store "$STORE" $VIEW
 
 say "stalemate -> a preference, with an honest basis"
 move shipper prefer "$RWLOCK" "$MUTEX" --basis throughput >/dev/null
 
 say "explain: the full derivation that settled it"
-"$DLKTK" explain "$ISSUE" --brief -d "$DISC" --store "$STORE"
+"$DLKTK" explain "$ISSUE" --brief -d "$DISC" --store "$STORE" $VIEW
 
 say "agenda is ready -> decide, then verify nothing drifted"
-"$DLKTK" agenda -d "$DISC" --store "$STORE"
+"$DLKTK" agenda -d "$DISC" --store "$STORE" $VIEW
 "$DLKTK" decide "$ISSUE" "$RWLOCK" --basis throughput -d "$DISC" --store "$STORE" --author shipper-bot --role shipper
-"$DLKTK" check -d "$DISC" --store "$STORE"
+"$DLKTK" check -d "$DISC" --store "$STORE" $VIEW
 
 say "the roster: who argued under which persona (auto-recorded from the moves)"
-"$DLKTK" roster -d "$DISC" --store "$STORE"
+"$DLKTK" roster -d "$DISC" --store "$STORE" $VIEW
 
 say "the git-native record (commit this)"
 RECORD="$STORE/dialectic.ndjson"
