@@ -87,11 +87,15 @@ to 4; covered by tests.
 
 ## 2. Multi-agent trust and identity (not yet implemented)
 
-- `--role` *is* the author: persona and identity are conflated, `concede` ownership is
+- ~~`--role` *is* the author: persona and identity are conflated, `concede` ownership is
   enforced on a freely spoofable string, and the design's `dlktk/roster` relation (§3.1)
-  is unimplemented. Minimum: separate `--author` from `--role`, record both, implement
-  roster. Signing (Q6) can stay deferred, but identity should be explicit rather than
-  accidental.
+  is unimplemented.~~ **[implemented on this branch]** `--author` (stable identity) is now
+  split from `--role` (persona); `concede`/`retract` ownership rides on the author, not the
+  persona; the `dlktk/roster` binding is auto-recorded on first use of an `(author, role)`
+  and exposed via the `roster` move/read (the binding policy was dogfooded — see
+  `examples/q8-roster-binding-policy.ndjson` and design §16 Q8). Identity is now explicit
+  and auditable. Caveat: it is still self-asserted — **signing (Q6) stays deferred**;
+  without it `--author` is a claim, not proof.
 - ~~`export`/`import` round-trip only **current** facts~~ **[implemented on this
   branch]** `export --history` emits the full tt history as an ordered event stream
   (asserts + retract/invalidate events keyed by content-addressed fact ids); `import`

@@ -13,8 +13,11 @@ DLKTK=${DLKTK:-dlktk}
 STORE=${1:-$(mktemp -d)}
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 move() { # move <role> <verb> [args...] -> node id on stdout
+  # Each persona is a distinct agent: --author is its stable identity (and what
+  # ownership checks ride on), --role its persona. The first move under a role
+  # auto-records the author↔role roster binding.
   local role=$1; shift
-  "$DLKTK" "$@" -d "$DISC" --store "$STORE" --role "$role" --format json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))'
+  "$DLKTK" "$@" -d "$DISC" --store "$STORE" --author "$role-bot" --role "$role" --format json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))'
 }
 
 say "shipper opens the discussion"
@@ -49,8 +52,11 @@ say "explain: the full derivation that settled it"
 
 say "agenda is ready -> decide, then verify nothing drifted"
 "$DLKTK" agenda -d "$DISC" --store "$STORE"
-"$DLKTK" decide "$ISSUE" "$RWLOCK" --basis throughput -d "$DISC" --store "$STORE" --role shipper
+"$DLKTK" decide "$ISSUE" "$RWLOCK" --basis throughput -d "$DISC" --store "$STORE" --author shipper-bot --role shipper
 "$DLKTK" check -d "$DISC" --store "$STORE"
+
+say "the roster: who argued under which persona (auto-recorded from the moves)"
+"$DLKTK" roster -d "$DISC" --store "$STORE"
 
 say "the git-native record (commit this)"
 RECORD="$STORE/dialectic.ndjson"

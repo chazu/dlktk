@@ -37,6 +37,7 @@ var (
 	flagJSON    string
 	flagStore   string
 	flagRole    string
+	flagAuthor  string
 	flagAsOf    string
 	flagValidAt string
 )
@@ -65,12 +66,13 @@ func root() *cobra.Command {
 	c.PersistentFlags().StringVarP(&flagDisc, "discussion", "d", "", "discussion id (else $DLKTK_DISC, else ./.dlktk/current)")
 	c.PersistentFlags().StringVar(&flagJSON, "format", "", "output format: text|json")
 	c.PersistentFlags().StringVar(&flagStore, "store", "", "pudl store dir (default: repo .pudl/ else ~/.pudl)")
-	c.PersistentFlags().StringVar(&flagRole, "role", "", "author/role attribution for moves (default: OS user)")
+	c.PersistentFlags().StringVar(&flagAuthor, "author", "", "stable identity attributed to moves and checked for ownership (default: OS user)")
+	c.PersistentFlags().StringVar(&flagRole, "role", "", "persona a move is made under; auto-records an author↔role roster binding (metadata only)")
 	c.PersistentFlags().StringVar(&flagAsOf, "as-of", "", "transaction-time travel: evaluate as of T (RFC3339 or Unix seconds)")
 	c.PersistentFlags().StringVar(&flagValidAt, "valid-at", "", "valid-time: which decisions were in force at T (RFC3339 or Unix seconds)")
 
 	c.AddCommand(
-		cmdNew(), cmdUse(), cmdList(),
+		cmdNew(), cmdUse(), cmdList(), cmdRoster(),
 		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(), cmdSupersede(),
 		cmdConcede("concede"), cmdConcede("retract"),
 		cmdStatus(), cmdTree(), cmdShow(), cmdSearch(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
@@ -115,9 +117,13 @@ func openStore() (*store.Store, error) {
 	return store.Open(store.ResolveDir(flagStore, cwd))
 }
 
-func author() string {
-	if flagRole != "" {
-		return flagRole
+// authorID is the stable ownership identity attributed to moves: --author if
+// given, else the OS user. concede/retract ownership checks ride on this, never
+// on the persona (design §2, §16 Q6). Historically --role doubled as identity;
+// it no longer does.
+func authorID() string {
+	if flagAuthor != "" {
+		return flagAuthor
 	}
 	if u, err := user.Current(); err == nil {
 		return u.Username
@@ -125,7 +131,11 @@ func author() string {
 	return "unknown"
 }
 
-func mover(s *store.Store) *proto.Mover { return proto.New(s, author()) }
+// roleOf is the optional persona a move is made under (--role). Empty means no
+// persona; a non-empty role auto-records the author↔role roster binding.
+func roleOf() string { return flagRole }
+
+func mover(s *store.Store) *proto.Mover { return proto.New(s, authorID(), roleOf()) }
 
 func wantJSON() bool { return strings.EqualFold(flagJSON, "json") }
 
@@ -690,7 +700,7 @@ func cmdMCP() *cobra.Command {
 				return err
 			}
 			defer s.Close()
-			return mcpserv.Serve(cmd.Context(), s, author(), &mcp.StdioTransport{})
+			return mcpserv.Serve(cmd.Context(), s, authorID(), roleOf(), &mcp.StdioTransport{})
 		},
 	}
 }
@@ -787,7 +797,7 @@ func cmdNew() *cobra.Command {
 			}
 			defer s.Close()
 			disc := id.New()
-			if err := s.AddDiscussion(ibis.Discussion{ID: disc, Title: args[0], Subject: subject, CreatedBy: author()}); err != nil {
+			if err := s.AddDiscussion(ibis.Discussion{ID: disc, Title: args[0], Subject: subject, CreatedBy: authorID()}); err != nil {
 				return err
 			}
 			if err := setCurrent(disc); err != nil {
@@ -833,6 +843,63 @@ func cmdList() *cobra.Command {
 			}
 			for _, d := range ds {
 				fmt.Printf("%s  %q  %s\n", d.ID, d.Title, d.Subject)
+			}
+			return nil
+		},
+	}
+}
+
+// RosterView is the roster read envelope.
+type RosterView struct {
+	Discussion string        `json:"discussion"`
+	Bindings   []ibis.Roster `json:"bindings"`
+}
+
+func cmdRoster() *cobra.Command {
+	return &cobra.Command{
+		Use:   "roster [<author> <role>]",
+		Short: "list author↔role bindings, or pre-declare one (auto-recorded by moves otherwise)",
+		Args:  cobra.MaximumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 1 {
+				return fail.New(fail.CodeIllegal, "bad_args", "roster takes either no args (list) or <author> <role> (bind)")
+			}
+			disc, err := resolveDisc()
+			if err != nil {
+				return err
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			if len(args) == 2 {
+				if err := s.AddRoster(ibis.Roster{Disc: disc, Author: args[0], Role: args[1]}); err != nil {
+					return err
+				}
+				if wantJSON() {
+					out, _ := render.JSON(ibis.Roster{Disc: disc, Author: args[0], Role: args[1]})
+					fmt.Println(out)
+				} else {
+					fmt.Printf("bound %s -> %s\n", args[0], args[1])
+				}
+				return nil
+			}
+			w, err := when()
+			if err != nil {
+				return err
+			}
+			rs, err := s.Rosters(disc, w)
+			if err != nil {
+				return err
+			}
+			if wantJSON() {
+				out, _ := render.JSON(RosterView{Discussion: disc, Bindings: rs})
+				fmt.Println(out)
+				return nil
+			}
+			for _, r := range rs {
+				fmt.Printf("%s  %s\n", r.Author, r.Role)
 			}
 			return nil
 		},
@@ -996,7 +1063,7 @@ func cmdSupersede() *cobra.Command {
 func cmdConcede(name string) *cobra.Command {
 	return &cobra.Command{
 		Use:   name + " <node>",
-		Short: "withdraw one of your own nodes",
+		Short: "withdraw one of your own nodes (ownership checked against --author, not --role)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withMover(func(disc string, m *proto.Mover) error {

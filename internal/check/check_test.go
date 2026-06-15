@@ -18,7 +18,7 @@ func open(t *testing.T) (*store.Store, *proto.Mover) {
 	if err := s.AddDiscussion(ibis.Discussion{ID: "d", Title: "t", CreatedBy: "x"}); err != nil {
 		t.Fatal(err)
 	}
-	return s, proto.New(s, "x")
+	return s, proto.New(s, "x", "")
 }
 
 func run(t *testing.T, s *store.Store) View {

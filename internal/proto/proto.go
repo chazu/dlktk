@@ -15,14 +15,32 @@ import (
 	"github.com/chazu/dlktk/internal/store"
 )
 
-// Mover performs moves attributed to a given author.
+// Mover performs moves attributed to a given author (the stable ownership
+// identity) acting under an optional role (persona). The two are distinct:
+// concede/retract ownership rides on author, never the spoofable persona. When a
+// role is set, every move auto-records the author↔role roster binding for the
+// discussion (idempotent; design §16 Q8).
 type Mover struct {
 	s      *store.Store
 	author string
+	role   string
 }
 
-// New returns a Mover writing as author.
-func New(s *store.Store, author string) *Mover { return &Mover{s: s, author: author} }
+// New returns a Mover writing as author under role (role may be empty).
+func New(s *store.Store, author, role string) *Mover {
+	return &Mover{s: s, author: author, role: role}
+}
+
+// ensureRoster auto-records the author↔role binding for disc when a role is set.
+// Called inside each move's transaction, so the binding lands atomically with the
+// move (and rolls back if the move is illegal). Content-addressing dedups, so a
+// repeated binding is a no-op at storage.
+func (m *Mover) ensureRoster(s *store.Store, disc string) error {
+	if m.role == "" {
+		return nil
+	}
+	return s.AddRoster(ibis.Roster{Disc: disc, Author: m.author, Role: m.role})
+}
 
 // Raise adds an issue, optionally responding to a parent issue, with the given
 // cardinality (empty defaults to select_one). Cardinality is fixed at creation
@@ -30,6 +48,9 @@ func New(s *store.Store, author string) *Mover { return &Mover{s: s, author: aut
 func (m *Mover) Raise(disc, text, parent string, card ibis.Cardinality) (string, error) {
 	nid := id.New()
 	err := m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
 		g, err := s.Graph(disc, store.Now())
 		if err != nil {
 			return err
@@ -61,6 +82,9 @@ func (m *Mover) Raise(disc, text, parent string, card ibis.Cardinality) (string,
 func (m *Mover) Propose(disc, issue, text string) (string, error) {
 	nid := id.New()
 	err := m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
 		g, err := s.Graph(disc, store.Now())
 		if err != nil {
 			return err
@@ -92,6 +116,9 @@ func (m *Mover) Object(disc, target, text string) (string, error) {
 func (m *Mover) attach(disc, target, text string, rel ibis.Rel) (string, error) {
 	nid := id.New()
 	err := m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
 		g, err := s.Graph(disc, store.Now())
 		if err != nil {
 			return err
@@ -117,6 +144,9 @@ func (m *Mover) attach(disc, target, text string, rel ibis.Rel) (string, error) 
 func (m *Mover) Prefer(disc, winner, loser, basis string) (string, error) {
 	pid := id.New()
 	err := m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
 		g, err := s.Graph(disc, store.Now())
 		if err != nil {
 			return err
@@ -141,6 +171,9 @@ func (m *Mover) Prefer(disc, winner, loser, basis string) (string, error) {
 // (design §16 Q4).
 func (m *Mover) Decide(disc, issue, position, basis string) error {
 	return m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
 		g, err := s.Graph(disc, store.Now())
 		if err != nil {
 			return err
@@ -180,6 +213,9 @@ func (m *Mover) Supersede(disc, issue, position, basis string) error {
 			Detail: "supersede requires --basis: record why the prior decision is overturned"}
 	}
 	return m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
 		g, err := s.Graph(disc, store.Now())
 		if err != nil {
 			return err
@@ -229,6 +265,9 @@ func standingDecision(s *store.Store, disc, issue string) (*ibis.Decision, error
 // Concede withdraws one of the author's own nodes (alias: retract).
 func (m *Mover) Concede(disc, node string) error {
 	return m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
 		g, err := s.Graph(disc, store.Now())
 		if err != nil {
 			return err

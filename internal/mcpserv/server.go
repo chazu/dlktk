@@ -40,18 +40,20 @@ type srv struct {
 	s             *store.Store
 	mu            sync.Mutex // serializes moves: legality check + write as one critical section
 	defaultAuthor string
+	defaultRole   string
 }
 
 // Serve runs the MCP server over the given transport until the client
-// disconnects. defaultAuthor attributes moves that pass no author.
-func Serve(ctx context.Context, s *store.Store, defaultAuthor string, t mcp.Transport) error {
-	server := NewServer(s, defaultAuthor)
+// disconnects. defaultAuthor/defaultRole attribute moves that pass none of their
+// own (author is the ownership identity, role the optional persona).
+func Serve(ctx context.Context, s *store.Store, defaultAuthor, defaultRole string, t mcp.Transport) error {
+	server := NewServer(s, defaultAuthor, defaultRole)
 	return server.Run(ctx, t)
 }
 
 // NewServer builds the dlktk MCP server (exposed for in-memory tests).
-func NewServer(s *store.Store, defaultAuthor string) *mcp.Server {
-	x := &srv{s: s, defaultAuthor: defaultAuthor}
+func NewServer(s *store.Store, defaultAuthor, defaultRole string) *mcp.Server {
+	x := &srv{s: s, defaultAuthor: defaultAuthor, defaultRole: defaultRole}
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "dlktk", Version: discover.Version},
 		&mcp.ServerOptions{Instructions: instructions},
@@ -70,6 +72,7 @@ func NewServer(s *store.Store, defaultAuthor string) *mcp.Server {
 
 	// --- reads ---
 	mcp.AddTool(server, &mcp.Tool{Name: "list", Description: "list discussions"}, x.list)
+	mcp.AddTool(server, &mcp.Tool{Name: "roster", Description: "list the author↔role bindings recorded for a discussion"}, x.roster)
 	mcp.AddTool(server, &mcp.Tool{Name: "status", Description: "grounded labelling of an issue's positions (all issues if none given)"}, x.status)
 	mcp.AddTool(server, &mcp.Tool{Name: "agenda", Description: "the worklist: UNDEC nodes, issues ready to decide, issues with no positions"}, x.agenda)
 	mcp.AddTool(server, &mcp.Tool{Name: "moves", Description: "legal + useful next moves for an issue"}, x.moves)
@@ -100,11 +103,14 @@ func bad(err error) (*mcp.CallToolResult, any, error) {
 	}, nil, nil
 }
 
-func (x *srv) mover(author string) *proto.Mover {
+func (x *srv) mover(author, role string) *proto.Mover {
 	if author == "" {
 		author = x.defaultAuthor
 	}
-	return proto.New(x.s, author)
+	if role == "" {
+		role = x.defaultRole
+	}
+	return proto.New(x.s, author, role)
 }
 
 // framework loads the present-time graph, labelling, and decisions.
@@ -152,6 +158,7 @@ type raiseArgs struct {
 	Parent      string `json:"parent,omitempty" jsonschema:"parent issue id"`
 	Cardinality string `json:"cardinality,omitempty" jsonschema:"select_one (default) or open; fixed at creation"`
 	Author      string `json:"author,omitempty"`
+	Role        string `json:"role,omitempty"`
 }
 
 func (x *srv) raise(ctx context.Context, req *mcp.CallToolRequest, a raiseArgs) (*mcp.CallToolResult, any, error) {
@@ -162,7 +169,7 @@ func (x *srv) raise(ctx context.Context, req *mcp.CallToolRequest, a raiseArgs) 
 	default:
 		return bad(&ibis.IllegalMove{Detail: "cardinality must be select_one or open, got " + a.Cardinality})
 	}
-	nid, err := x.mover(a.Author).Raise(a.Discussion, a.Text, a.Parent, ibis.Cardinality(a.Cardinality))
+	nid, err := x.mover(a.Author, a.Role).Raise(a.Discussion, a.Text, a.Parent, ibis.Cardinality(a.Cardinality))
 	if err != nil {
 		return bad(err)
 	}
@@ -174,12 +181,13 @@ type proposeArgs struct {
 	Issue      string `json:"issue" jsonschema:"issue id"`
 	Text       string `json:"text" jsonschema:"the candidate answer"`
 	Author     string `json:"author,omitempty"`
+	Role       string `json:"role,omitempty"`
 }
 
 func (x *srv) propose(ctx context.Context, req *mcp.CallToolRequest, a proposeArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	nid, err := x.mover(a.Author).Propose(a.Discussion, a.Issue, a.Text)
+	nid, err := x.mover(a.Author, a.Role).Propose(a.Discussion, a.Issue, a.Text)
 	if err != nil {
 		return bad(err)
 	}
@@ -191,12 +199,13 @@ type attachArgs struct {
 	Target     string `json:"target" jsonschema:"position or argument id"`
 	Text       string `json:"text" jsonschema:"the claim"`
 	Author     string `json:"author,omitempty"`
+	Role       string `json:"role,omitempty"`
 }
 
 func (x *srv) support(ctx context.Context, req *mcp.CallToolRequest, a attachArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	nid, err := x.mover(a.Author).Support(a.Discussion, a.Target, a.Text)
+	nid, err := x.mover(a.Author, a.Role).Support(a.Discussion, a.Target, a.Text)
 	if err != nil {
 		return bad(err)
 	}
@@ -206,7 +215,7 @@ func (x *srv) support(ctx context.Context, req *mcp.CallToolRequest, a attachArg
 func (x *srv) object(ctx context.Context, req *mcp.CallToolRequest, a attachArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	nid, err := x.mover(a.Author).Object(a.Discussion, a.Target, a.Text)
+	nid, err := x.mover(a.Author, a.Role).Object(a.Discussion, a.Target, a.Text)
 	if err != nil {
 		return bad(err)
 	}
@@ -219,12 +228,13 @@ type preferArgs struct {
 	Loser      string `json:"loser" jsonschema:"node id it beats"`
 	Basis      string `json:"basis,omitempty" jsonschema:"why (security, velocity, throughput, …)"`
 	Author     string `json:"author,omitempty"`
+	Role       string `json:"role,omitempty"`
 }
 
 func (x *srv) prefer(ctx context.Context, req *mcp.CallToolRequest, a preferArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	pid, err := x.mover(a.Author).Prefer(a.Discussion, a.Winner, a.Loser, a.Basis)
+	pid, err := x.mover(a.Author, a.Role).Prefer(a.Discussion, a.Winner, a.Loser, a.Basis)
 	if err != nil {
 		return bad(err)
 	}
@@ -237,12 +247,13 @@ type decideArgs struct {
 	Position   string `json:"position" jsonschema:"accepted position id"`
 	Basis      string `json:"basis,omitempty" jsonschema:"why"`
 	Author     string `json:"author,omitempty"`
+	Role       string `json:"role,omitempty"`
 }
 
 func (x *srv) decide(ctx context.Context, req *mcp.CallToolRequest, a decideArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if err := x.mover(a.Author).Decide(a.Discussion, a.Issue, a.Position, a.Basis); err != nil {
+	if err := x.mover(a.Author, a.Role).Decide(a.Discussion, a.Issue, a.Position, a.Basis); err != nil {
 		return bad(err)
 	}
 	return ok(map[string]string{"issue": a.Issue, "position": a.Position})
@@ -254,12 +265,13 @@ type supersedeArgs struct {
 	Position   string `json:"position" jsonschema:"newly accepted position id"`
 	Basis      string `json:"basis" jsonschema:"why the prior decision is overturned (required)"`
 	Author     string `json:"author,omitempty"`
+	Role       string `json:"role,omitempty"`
 }
 
 func (x *srv) supersede(ctx context.Context, req *mcp.CallToolRequest, a supersedeArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if err := x.mover(a.Author).Supersede(a.Discussion, a.Issue, a.Position, a.Basis); err != nil {
+	if err := x.mover(a.Author, a.Role).Supersede(a.Discussion, a.Issue, a.Position, a.Basis); err != nil {
 		return bad(err)
 	}
 	return ok(map[string]string{"issue": a.Issue, "position": a.Position})
@@ -269,12 +281,13 @@ type concedeArgs struct {
 	Discussion string `json:"discussion" jsonschema:"discussion id"`
 	Node       string `json:"node" jsonschema:"id of one of your own nodes"`
 	Author     string `json:"author,omitempty"`
+	Role       string `json:"role,omitempty"`
 }
 
 func (x *srv) concede(ctx context.Context, req *mcp.CallToolRequest, a concedeArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if err := x.mover(a.Author).Concede(a.Discussion, a.Node); err != nil {
+	if err := x.mover(a.Author, a.Role).Concede(a.Discussion, a.Node); err != nil {
 		return bad(err)
 	}
 	return ok(map[string]string{"conceded": a.Node})
@@ -290,6 +303,14 @@ func (x *srv) list(ctx context.Context, req *mcp.CallToolRequest, _ noArgs) (*mc
 		return bad(err)
 	}
 	return ok(map[string]any{"discussions": ds})
+}
+
+func (x *srv) roster(ctx context.Context, req *mcp.CallToolRequest, a discArgs) (*mcp.CallToolResult, any, error) {
+	rs, err := x.s.Rosters(a.Discussion, store.Now())
+	if err != nil {
+		return bad(err)
+	}
+	return ok(map[string]any{"discussion": a.Discussion, "bindings": rs})
 }
 
 type statusArgs struct {

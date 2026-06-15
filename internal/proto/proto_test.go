@@ -16,7 +16,7 @@ func fixture(t *testing.T) (s *store.Store, m *Mover, issue, posA, posB string) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	m = New(s, "tester")
+	m = New(s, "tester", "")
 	if err := s.AddDiscussion(ibis.Discussion{ID: "disc-1", Title: "t", CreatedBy: "tester"}); err != nil {
 		t.Fatal(err)
 	}
@@ -83,8 +83,8 @@ func TestSupersedeRequiresStandingDecision(t *testing.T) {
 func TestConcurrentPreferCannotCreateCycle(t *testing.T) {
 	s, _, _, posA, posB := fixture(t)
 
-	agentX := New(s, "agent-x")
-	agentY := New(s, "agent-y")
+	agentX := New(s, "agent-x", "")
+	agentY := New(s, "agent-y", "")
 
 	errs := make(chan error, 2)
 	go func() {
@@ -116,6 +116,67 @@ func TestConcurrentPreferCannotCreateCycle(t *testing.T) {
 	if len(prefs) != 1 {
 		t.Fatalf("want 1 stored preference, got %d", len(prefs))
 	}
+}
+
+// Ownership rides on the author identity, not the persona: bob acting as the
+// same "Reviewer" role cannot concede a node alice authored (design §16 Q6).
+func TestConcedeOwnershipIsAuthorNotRole(t *testing.T) {
+	s, _, _, _, _ := fixture(t)
+
+	alice := New(s, "alice", "Reviewer")
+	bob := New(s, "bob", "Reviewer")
+
+	node, err := alice.Propose("disc-1", mustIssue(t, s), "alice's position")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same role, different identity: must be rejected.
+	wantIllegal(t, bob.Concede("disc-1", node), "bob conceding alice's node under shared role")
+	// The real author can.
+	if err := alice.Concede("disc-1", node); err != nil {
+		t.Fatalf("alice conceding her own node: %v", err)
+	}
+}
+
+// A non-empty role auto-records the author↔role roster binding on the first move
+// and dedups thereafter (design §16 Q8). No role => no binding.
+func TestRoleAutoRecordsRoster(t *testing.T) {
+	s, _, _, posA, _ := fixture(t) // fixture's mover has no role
+
+	sec := New(s, "alice", "Security")
+	if _, err := sec.Object("disc-1", posA, "threat model gap"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sec.Object("disc-1", posA, "second objection"); err != nil {
+		t.Fatal(err)
+	}
+
+	rs, err := s.Rosters("disc-1", store.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One binding despite two moves (content-addressed dedup); the no-role
+	// fixture moves recorded none.
+	if len(rs) != 1 {
+		t.Fatalf("want 1 roster binding, got %d: %+v", len(rs), rs)
+	}
+	if rs[0].Author != "alice" || rs[0].Role != "Security" || rs[0].Disc != "disc-1" {
+		t.Fatalf("roster binding wrong: %+v", rs[0])
+	}
+}
+
+// mustIssue returns the discussion's single issue id.
+func mustIssue(t *testing.T, s *store.Store) string {
+	t.Helper()
+	g, err := s.Graph("disc-1", store.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	is := g.Issues()
+	if len(is) != 1 {
+		t.Fatalf("want 1 issue, got %d", len(is))
+	}
+	return is[0]
 }
 
 // A move whose later write fails must not leave earlier writes behind: the

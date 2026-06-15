@@ -66,9 +66,15 @@ text, and the moves that would flip it), `show <node>` (the node in full),
   justified position is allowed but recorded as an override — say so
   explicitly if you do it.
 - **Withdraw your own mistakes** with `concede <node>`. You can only concede
-  nodes you authored.
-- **Attribute yourself**: pass `--role <name>` (CLI) or `author` (MCP) on
-  every move so the record shows who argued what.
+  nodes *you authored* — ownership is checked against `--author`, the stable
+  identity, never the persona.
+- **Attribute yourself**: `--author <id>` is your stable identity (defaults to
+  the OS user; on MCP, the `author` field). `--role <persona>` is the hat you
+  argue under and is optional — set both for multi-agent runs. The first move
+  you make under a role auto-records an author↔role binding (idempotent); read
+  the bindings with `roster`, or pre-declare one with `roster <author> <role>`.
+  Identity and persona are distinct: two agents sharing the `Security` persona
+  still own only their own nodes.
 
 ## Personas (optional, for multi-agent deliberation)
 

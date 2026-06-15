@@ -10,13 +10,17 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.7.0 adds the search read. 0.6.0 added the
+// Version of the dlktk contract. 0.8.0 splits --author (ownership identity) from
+// --role (persona), adds the dlktk/roster binding with auto-record on every
+// move under a role plus the roster move/read, and makes concede/retract
+// ownership ride on the author identity (design §16 Q6/Q8). 0.7.0 adds the
+// search read. 0.6.0 added the
 // show read, node text in the why envelope, decide suggestions in moves, and
 // the ready/unpopulated agenda sections. 0.5.0 added the check read (decision
 // drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
 // supersede move (bare re-decide rejected, design §16 Q4) and
 // decided.supersedes.
-const Version = "0.7.0"
+const Version = "0.8.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -77,7 +81,8 @@ func Current() Schema {
 		Globals: []Flag{
 			{"--format text|json", "output format (json gives the envelopes below)"},
 			{"--discussion|-d id", "target discussion (else $DLKTK_DISC, else ./.dlktk/current)"},
-			{"--role name", "author/role attribution for moves (default: OS user)"},
+			{"--author name", "stable identity attributed to moves and checked for ownership (default: OS user)"},
+			{"--role name", "persona a move is made under; auto-records an author↔role roster binding (metadata only)"},
 			{"--as-of T", "transaction-time travel: evaluate as of T (RFC3339 or Unix seconds)"},
 			{"--valid-at T", "valid-time: which decisions were in force at T"},
 			{"--store dir", "pudl store dir (default: repo .pudl/ else ~/.pudl)"},
@@ -90,8 +95,9 @@ func Current() Schema {
 			{"prefer", []string{"winner", "loser", "--basis label"}, "AF nodes; no preference cycle", true},
 			{"decide", []string{"issue", "position", "[--basis label]"}, "position responds_to issue; issue not already decided (overturning requires supersede)", true},
 			{"supersede", []string{"issue", "position", "--basis label"}, "issue already decided; basis required; new decision links the prior position", true},
-			{"concede", []string{"node"}, "author owns the node", true},
-			{"retract", []string{"node"}, "author owns the node", true},
+			{"concede", []string{"node"}, "author (identity, not persona) owns the node", true},
+			{"retract", []string{"node"}, "author (identity, not persona) owns the node", true},
+			{"roster", []string{"[author]", "[role]"}, "no args lists bindings; author+role pre-declares one (moves auto-record otherwise)", true},
 		},
 		Reads: []Read{
 			{"status", []string{"[issue]"}, "[IssueStatus]", false},
@@ -103,6 +109,7 @@ func Current() Schema {
 			{"explain", []string{"issue"}, "ExplainView", false},
 			{"tree", []string{"[issue]"}, "text", false},
 			{"list", nil, "[Discussion]", false},
+			{"roster", nil, "RosterView", false},
 			{"check", []string{"[--all]", "[--strict]"}, "CheckView", false},
 			{"discover", nil, "Schema (this document)", false},
 		},
@@ -124,6 +131,7 @@ func Current() Schema {
 			"ExplainView": "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override, supersedes?}, decision_is_in: bool}",
 			"CheckView":   "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate, severity: error|warning, discussion, issue?, node?, detail}], ok: bool}",
 			"Discussion":  "{id, title, subject, created_by}",
+			"RosterView":  "{discussion, bindings: [{disc, author, role}]}",
 		},
 	}
 }
@@ -247,6 +255,12 @@ func CUESchema() string {
 	supersedes?: string // prior decided position, when made via supersede
 }
 
+#Roster: {
+	disc:   string
+	author: string // stable ownership identity
+	role:   string // persona; metadata only, never reaches the evaluator
+}
+
 // relation -> schema binding
 #byRelation: {
 	"dlktk/discussion": #Discussion
@@ -255,6 +269,7 @@ func CUESchema() string {
 	"dlktk/issue_card": #IssueCard
 	"dlktk/preference": #Preference
 	"dlktk/decision":   #Decision
+	"dlktk/roster":     #Roster
 }
 `
 }

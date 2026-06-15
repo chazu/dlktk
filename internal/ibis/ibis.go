@@ -88,6 +88,17 @@ type IssueCard struct {
 	Cardinality Cardinality `json:"cardinality"`
 }
 
+// Roster binds an author (stable identity) to a role (persona) within a
+// discussion. Pure metadata: it never reaches the evaluator (design §11). The
+// binding is auto-recorded the first time an author moves under a --role, and
+// can also be pre-declared with the `roster` move (design §16 Q8). Author is the
+// ownership identity that concede/retract check, distinct from the persona.
+type Roster struct {
+	Disc   string `json:"disc"`
+	Author string `json:"author"`
+	Role   string `json:"role"`
+}
+
 // PrefixFor returns the presentational one-char kind prefix for a node id.
 func PrefixFor(k Kind) string {
 	switch k {

@@ -22,7 +22,7 @@ func harness(t *testing.T) func(tool string, args map[string]any) (map[string]an
 
 	ctx := context.Background()
 	serverT, clientT := mcp.NewInMemoryTransports()
-	server := NewServer(s, "tester")
+	server := NewServer(s, "tester", "")
 	ss, err := server.Connect(ctx, serverT, nil)
 	if err != nil {
 		t.Fatal(err)

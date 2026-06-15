@@ -23,6 +23,7 @@ const (
 	relIssueCard  = "dlktk/issue_card"
 	relPreference = "dlktk/preference"
 	relDecision   = "dlktk/decision"
+	relRoster     = "dlktk/roster"
 )
 
 // factOps is the slice of pudl's API that store operations run against. Both
@@ -133,6 +134,11 @@ func (s *Store) SetIssueCard(c ibis.IssueCard) error {
 	return s.add(relIssueCard, c, "")
 }
 
+// AddRoster records an author↔role binding for a discussion. Content-addressing
+// makes it idempotent: re-asserting the same binding dedups, so the auto-record
+// on every move costs one row per distinct (disc, author, role) (design §16 Q8).
+func (s *Store) AddRoster(r ibis.Roster) error { return s.add(relRoster, r, r.Author) }
+
 // --- reads (filtered by discussion in Go; graphs are tiny) ---
 
 func (s *Store) Discussions(w When) ([]ibis.Discussion, error) {
@@ -157,6 +163,23 @@ func (s *Store) Preferences(disc string, w When) ([]ibis.Preference, error) {
 func (s *Store) Decisions(disc string, w When) ([]ibis.Decision, error) {
 	all, err := scan[ibis.Decision](s, relDecision, w)
 	return filter(all, disc, func(d ibis.Decision) string { return d.Disc }), err
+}
+
+// Rosters returns the author↔role bindings recorded for a discussion, in
+// canonical (author, role) order so output is deterministic.
+func (s *Store) Rosters(disc string, w When) ([]ibis.Roster, error) {
+	all, err := scan[ibis.Roster](s, relRoster, w)
+	if err != nil {
+		return nil, err
+	}
+	out := filter(all, disc, func(r ibis.Roster) string { return r.Disc })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Author != out[j].Author {
+			return out[i].Author < out[j].Author
+		}
+		return out[i].Role < out[j].Role
+	})
+	return out, nil
 }
 
 // IssueCards returns cards at the given viewpoint. Cards carry no disc of their
@@ -310,6 +333,9 @@ func (s *Store) Export(disc string) ([]ExportRecord, error) {
 	if err := emit(relDecision, discIs); err != nil {
 		return nil, err
 	}
+	if err := emit(relRoster, discIs); err != nil {
+		return nil, err
+	}
 	if err := emit(relIssueCard, func(m map[string]any) bool { i, _ := m["issue"].(string); return issueIDs[i] }); err != nil {
 		return nil, err
 	}
@@ -386,7 +412,7 @@ func (s *Store) ExportHistory(disc string) ([]ExportRecord, error) {
 	if err := collect(relNode, discIs); err != nil { // populates issueIDs
 		return nil, err
 	}
-	for _, rel := range []string{relLink, relPreference, relDecision} {
+	for _, rel := range []string{relLink, relPreference, relDecision, relRoster} {
 		if err := collect(rel, discIs); err != nil {
 			return nil, err
 		}
@@ -592,6 +618,12 @@ func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Pr
 			return err
 		}
 		return firstErr(require("disc", v.Disc), require("issue", v.Issue), require("position", v.Position))
+	case relRoster:
+		var v ibis.Roster
+		if err := parse(&v); err != nil {
+			return err
+		}
+		return firstErr(require("disc", v.Disc), require("author", v.Author), require("role", v.Role))
 	default:
 		return bad("unknown relation %q", rec.Relation)
 	}
@@ -599,7 +631,7 @@ func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Pr
 
 func knownRelation(rel string) bool {
 	switch rel {
-	case relDiscussion, relNode, relLink, relIssueCard, relPreference, relDecision:
+	case relDiscussion, relNode, relLink, relIssueCard, relPreference, relDecision, relRoster:
 		return true
 	}
 	return false
