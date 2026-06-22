@@ -1236,13 +1236,18 @@ func cmdTree() *cobra.Command {
 				}
 				labels = fw.Grounded()
 			}
-			fmt.Print(render.Tree(g, issue, opts, fw, labels, decs))
+			rosters, err := s.Rosters(disc, w)
+			if err != nil {
+				return err
+			}
+			fmt.Print(render.Tree(g, issue, opts, fw, labels, decs, rosters))
 			return nil
 		},
 	}
 	f := c.Flags()
 	f.BoolVar(&opts.Labels, "labels", false, "annotate with grounded label (IN/OUT/UNDEC) and ↩ reinstated marks")
-	f.BoolVar(&opts.Authors, "authors", false, "show each node's author")
+	f.BoolVar(&opts.Authors, "authors", false, "also show each participant's stable author id alongside their role")
+	f.BoolVar(&opts.NoWho, "no-who", false, "omit participant attribution (role/identity) from each node")
 	f.BoolVar(&opts.ASCII, "ascii", false, "ASCII connectors/glyphs instead of Unicode")
 	f.BoolVar(&opts.NoWrap, "no-wrap", false, "one truncated line per node (dense overview) instead of wrapping full text")
 	f.BoolVar(&opts.NoIDs, "no-ids", false, "omit node id suffixes")

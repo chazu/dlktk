@@ -26,13 +26,19 @@ func SetColor(on bool) { colorOn = on }
 func SetWidth(w int) { wrapWidth = w }
 
 const (
-	ansiReset  = "\033[0m"
-	ansiBold   = "\033[1m"
-	ansiDim    = "\033[2m"
-	ansiRed    = "\033[31m"
-	ansiGreen  = "\033[32m"
-	ansiYellow = "\033[33m"
-	ansiCyan   = "\033[36m"
+	ansiReset    = "\033[0m"
+	ansiBold     = "\033[1m"
+	ansiDim      = "\033[2m"
+	ansiRed      = "\033[31m"
+	ansiGreen    = "\033[32m"
+	ansiYellow   = "\033[33m"
+	ansiCyan     = "\033[36m"
+	ansiBlueBold = "\033[1;38;5;39m" // bold azure — the position backbone
+	// Bold+color combos for the grounded labels: maximum contrast so a reader
+	// tells IN/OUT/UNDEC apart at a glance even on a dense tree.
+	ansiInBold    = "\033[1;32m" // bold green
+	ansiOutBold   = "\033[1;31m" // bold red
+	ansiUndecBold = "\033[1;33m" // bold yellow
 )
 
 func paint(code, s string) string {
@@ -58,6 +64,50 @@ func labelColor(label, s string) string {
 	}
 	return s
 }
+
+// labelColorBold is labelColor at full contrast (bold + color) — used in the
+// tree where badges must pop out of a busy outline.
+func labelColorBold(label, s string) string {
+	switch label {
+	case "IN":
+		return paint(ansiInBold, s)
+	case "OUT":
+		return paint(ansiOutBold, s)
+	case "UNDEC":
+		return paint(ansiUndecBold, s)
+	}
+	return s
+}
+
+// participantPalette is a set of high-contrast 256-color hues, deliberately
+// avoiding the green/red/yellow reserved for grounded labels. Each participant
+// is assigned one stable hue so the eye can track who said what across the tree.
+var participantPalette = []string{
+	"\033[38;5;39m",  // azure
+	"\033[38;5;208m", // orange
+	"\033[38;5;170m", // magenta
+	"\033[38;5;45m",  // cyan
+	"\033[38;5;213m", // pink
+	"\033[38;5;141m", // violet
+	"\033[38;5;111m", // periwinkle
+	"\033[38;5;215m", // apricot
+}
+
+// participantColor maps a participant identity to a stable palette hue. The hash
+// is order-stable so the same name always paints the same color within a run.
+func participantColor(name string) string {
+	h := 0
+	for _, r := range name {
+		h = h*31 + int(r)
+	}
+	if h < 0 {
+		h = -h
+	}
+	return participantPalette[h%len(participantPalette)]
+}
+
+// cParticipant paints s in the stable hue assigned to a participant identity.
+func cParticipant(name, s string) string { return paint(participantColor(name), s) }
 
 // labelCol returns a fixed-width "<glyph> <NAME>" badge for a grounded label,
 // colored. Visible width is 7 ("? UNDEC") so columns align across rows.

@@ -1,6 +1,7 @@
 package render
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/chazu/dlktk/internal/af"
@@ -147,5 +148,34 @@ func TestShowLinksBothDirections(t *testing.T) {
 	}
 	if v.Label != "" {
 		t.Fatalf("issue must not carry an AF label: %+v", v)
+	}
+}
+
+// Tree attributes each node to its participant: the role (persona) bound to the
+// author via the roster, with the stable author id alongside. --no-who silences
+// it. Color is off in tests so we assert on plain text.
+func TestTreeShowsRoleAndIdentity(t *testing.T) {
+	g, _, _ := settledGraph() // C is authored by "carol"
+	rosters := []ibis.Roster{{Author: "carol", Role: "security"}}
+
+	out := Tree(g, "I", TreeOpts{}, nil, nil, nil, rosters)
+	if !strings.Contains(out, "security") {
+		t.Fatalf("tree omits the role:\n%s", out)
+	}
+	if !strings.Contains(out, "carol") {
+		t.Fatalf("tree omits the stable identity:\n%s", out)
+	}
+
+	// An author with no roster binding falls back to showing the bare identity.
+	g.Nodes["A"] = ibis.Node{ID: "A", Kind: ibis.Position, Text: "mutex", Author: "dave"}
+	out = Tree(g, "I", TreeOpts{}, nil, nil, nil, rosters)
+	if !strings.Contains(out, "dave") {
+		t.Fatalf("unrostered author should still appear:\n%s", out)
+	}
+
+	// --no-who drops attribution entirely.
+	out = Tree(g, "I", TreeOpts{NoWho: true}, nil, nil, nil, rosters)
+	if strings.Contains(out, "security") || strings.Contains(out, "carol") {
+		t.Fatalf("--no-who must suppress attribution:\n%s", out)
 	}
 }

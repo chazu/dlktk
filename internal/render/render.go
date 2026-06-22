@@ -215,7 +215,8 @@ func JSON(v any) (string, error) {
 // TreeOpts controls how Tree renders the IBIS graph.
 type TreeOpts struct {
 	Labels   bool // annotate positions/arguments with grounded label + decided/reinstated markers
-	Authors  bool // append the node author
+	Authors  bool // also reveal each participant's stable author id alongside their role
+	NoWho    bool // suppress participant attribution (role/identity) entirely
 	ASCII    bool // use ASCII connectors/glyphs instead of Unicode (dumb terminals)
 	NoWrap   bool // one line per node, truncated to width (dense overview) instead of wrapping full text
 	NoIDs    bool // omit the node id suffix
@@ -238,6 +239,7 @@ type treeWriter struct {
 	decided       map[string]bool   // position id -> decided in its favour
 	issueDecision map[string]string // issue id -> the position decided for it
 	reinstated    map[string]bool
+	roster        map[string]string // author id -> role (persona) within this discussion
 	seen          map[string]bool
 	width         int
 }
@@ -245,7 +247,7 @@ type treeWriter struct {
 // Tree renders the IBIS graph rooted at the given issue (or all root issues if
 // issue == "") as an indented outline. Pass fw/labels/decs (any may be nil) to
 // enable opts.Labels annotations; structure-only renders can pass nil.
-func Tree(g *ibis.Graph, issue string, opts TreeOpts, fw *af.Framework, labels map[string]af.Label, decs []ibis.Decision) string {
+func Tree(g *ibis.Graph, issue string, opts TreeOpts, fw *af.Framework, labels map[string]af.Label, decs []ibis.Decision, rosters []ibis.Roster) string {
 	roots := []string{}
 	if issue != "" {
 		roots = []string{issue}
@@ -278,6 +280,11 @@ func Tree(g *ibis.Graph, issue string, opts TreeOpts, fw *af.Framework, labels m
 		}
 	}
 
+	roster := map[string]string{}
+	for _, r := range rosters {
+		roster[r.Author] = r.Role
+	}
+
 	width := opts.Width
 	if width == 0 {
 		width = 100
@@ -285,7 +292,7 @@ func Tree(g *ibis.Graph, issue string, opts TreeOpts, fw *af.Framework, labels m
 	tw := &treeWriter{
 		b: &strings.Builder{}, g: g, opts: opts, labels: labels,
 		decided: decided, issueDecision: issueDecision, reinstated: reinstated,
-		seen: map[string]bool{}, width: width,
+		roster: roster, seen: map[string]bool{}, width: width,
 	}
 	if !opts.NoLegend {
 		tw.b.WriteString(tw.legend() + "\n")
@@ -296,24 +303,47 @@ func Tree(g *ibis.Graph, issue string, opts TreeOpts, fw *af.Framework, labels m
 	return tw.b.String()
 }
 
-// legend describes the glyphs in use, adapting to ASCII and --labels.
+// legend describes the glyphs in use, adapting to ASCII and --labels. Glyphs are
+// shown in their live colors so the legend doubles as a color key.
 func (t *treeWriter) legend() string {
 	parts := []string{
-		t.glyph("◇", "#") + " issue",
-		t.glyph("•", "*") + " position",
-		t.glyph("⚔", "x") + " objects-to",
-		"+ supports",
-		t.glyph("★", "@") + " decided",
+		cBold(t.glyph("◇", "#")) + " issue",
+		t.relGlyph(ibis.RespondsTo) + "position",
+		t.relGlyph(ibis.ObjectsTo) + "objects-to",
+		t.relGlyph(ibis.Supports) + "supports",
+		cBold(t.glyph("★", "@")) + " decided",
 	}
 	if t.opts.Labels {
 		parts = append(parts,
-			labelColor("IN", t.glyph("✓", "+")+" IN"),
-			labelColor("OUT", t.glyph("✗", "-")+" OUT"),
-			labelColor("UNDEC", "? UNDEC"),
-			labelColor("IN", t.glyph("↩", "^")+" reinstated"),
+			labelColorBold("IN", t.glyph("✓", "+")+" IN"),
+			labelColorBold("OUT", t.glyph("✗", "-")+" OUT"),
+			labelColorBold("UNDEC", "? UNDEC"),
+			labelColorBold("IN", t.glyph("↩", "^")+" reinstated"),
 		)
 	}
-	return cDim("legend: ") + strings.Join(parts, "  ")
+	out := cDim("legend: ") + strings.Join(parts, "  ")
+	if t.showsWho() {
+		lead := "        "
+		if colorOn {
+			lead += "each participant has a stable color · "
+		}
+		out += "\n" + cDim(lead) + t.glyph("▸ ", "by ") + "role" + cDim(" ⟨identity⟩")
+	}
+	return out
+}
+
+// showsWho reports whether participant attribution is rendered. Off only when
+// the caller opts out or no node carries an author.
+func (t *treeWriter) showsWho() bool {
+	if t.opts.NoWho {
+		return false
+	}
+	for _, n := range t.g.Nodes {
+		if n.Author != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // write emits one node and recurses into its children. prefix is the accumulated
@@ -322,11 +352,11 @@ func (t *treeWriter) write(node, prefix string, isRoot, isLast bool, rel ibis.Re
 	connector, childGutter := "", prefix
 	if !isRoot {
 		if isLast {
-			connector = t.glyph("└─ ", "`- ")
+			connector = cDim(t.glyph("└─ ", "`- "))
 			childGutter = prefix + "   "
 		} else {
-			connector = t.glyph("├─ ", "|- ")
-			childGutter = prefix + t.glyph("│  ", "|  ")
+			connector = cDim(t.glyph("├─ ", "|- "))
+			childGutter = prefix + cDim(t.glyph("│  ", "|  "))
 		}
 	}
 
@@ -352,12 +382,12 @@ func (t *treeWriter) writeBody(node string, rel ibis.Rel, prefix, connector, chi
 	n := t.g.Nodes[node]
 	head := t.relGlyph(rel)
 	if n.Kind == ibis.Issue {
-		head = t.glyph("◇ ", "# ")
+		head = cBold(t.glyph("◇ ", "# "))
 	}
 	head += t.badge(node)
 	if n.Kind == ibis.Issue {
 		if card := t.g.IssueCards[node]; card != "" {
-			head += "[" + string(card) + "] "
+			head += cDim("[" + string(card) + "] ")
 		}
 	}
 
@@ -365,13 +395,13 @@ func (t *treeWriter) writeBody(node string, rel ibis.Rel, prefix, connector, chi
 	if !t.opts.NoIDs {
 		tail += "  " + t.idSuffix(node)
 	}
-	if t.opts.Authors && n.Author != "" {
-		tail += " " + n.Author
+	if who := t.attribution(n); who != "" {
+		tail += "  " + who
 	}
 	// On the issue line, name the standing decision so it is visible without
 	// scanning the subtree for the ★-marked position.
 	if pos, ok := t.issueDecision[node]; ok {
-		tail += "  " + t.glyph("✓", "v") + " decided: " + ibis.PrefixFor(ibis.Position) + pos
+		tail += "  " + labelColorBold("IN", t.glyph("✓", "v")+" decided: ") + pid(pos)
 	}
 
 	// Text column starts after prefix + connector + head; continuation lines
@@ -417,20 +447,43 @@ func (t *treeWriter) badge(node string) string {
 	if t.opts.Labels {
 		switch t.labels[node] {
 		case af.IN:
-			s = labelColor("IN", t.glyph("✓ ", "+ "))
+			s = labelColorBold("IN", t.glyph("✓ ", "+ "))
 		case af.OUT:
-			s = labelColor("OUT", t.glyph("✗ ", "- "))
+			s = labelColorBold("OUT", t.glyph("✗ ", "- "))
 		case af.UNDEC:
-			s = labelColor("UNDEC", "? ")
+			s = labelColorBold("UNDEC", "? ")
 		}
 	}
 	if t.decided[node] {
 		s += cBold(t.glyph("★ ", "@ "))
 	}
 	if t.opts.Labels && t.reinstated[node] {
-		s += labelColor("IN", t.glyph("↩ ", "^ "))
+		s += labelColorBold("IN", t.glyph("↩ ", "^ "))
 	}
 	return s
+}
+
+// attribution renders who is responsible for a node: the role (persona) they
+// moved under, with their stable identity in dim when it adds information or the
+// reader opted in with --authors. Each participant keeps a stable color so the
+// same voice is the same hue everywhere in the tree. Empty when there is nothing
+// to show or the reader opted out with --no-who.
+func (t *treeWriter) attribution(n ibis.Node) string {
+	if t.opts.NoWho || n.Author == "" {
+		return ""
+	}
+	role := t.roster[n.Author]
+	persona := role
+	if persona == "" {
+		persona = n.Author // no role bound — the author is the identity we have
+	}
+	out := cParticipant(n.Author, t.glyph("▸ ", "by ")+persona)
+	// Append the stable identity when it carries information the role doesn't:
+	// a distinct author behind the persona, or an explicit --authors request.
+	if role != "" && (t.opts.Authors || role != n.Author) {
+		out += " " + cDim("⟨"+n.Author+"⟩")
+	}
+	return out
 }
 
 func (t *treeWriter) idSuffix(node string) string {
@@ -440,11 +493,11 @@ func (t *treeWriter) idSuffix(node string) string {
 func (t *treeWriter) relGlyph(rel ibis.Rel) string {
 	switch rel {
 	case ibis.ObjectsTo:
-		return t.glyph("⚔ ", "x ")
+		return labelColorBold("OUT", t.glyph("⚔ ", "x ")) // red: an attack
 	case ibis.Supports:
-		return "+ "
+		return labelColorBold("IN", "+ ") // green: reinforcement
 	case ibis.RespondsTo:
-		return t.glyph("• ", "* ")
+		return paint(ansiBlueBold, t.glyph("• ", "* ")) // blue: a stance on the issue
 	}
 	return ""
 }
