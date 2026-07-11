@@ -27,7 +27,7 @@ func TestReinstatementAndPreference(t *testing.T) {
 	}
 	cards := []ibis.IssueCard{{Issue: "I", Cardinality: ibis.SelectOne}}
 
-	g := ibis.NewGraph(nodes, links, nil, cards)
+	g := ibis.NewGraph(nodes, links, nil, cards, nil, nil, nil)
 	labels := mustBuild(t, g).Grounded()
 
 	assert(t, labels, "D", IN)
@@ -37,7 +37,7 @@ func TestReinstatementAndPreference(t *testing.T) {
 
 	// Add prefer(B, A): B's attacker A is now blocked, B reinstated.
 	prefs := []ibis.Preference{{Winner: "B", Loser: "A"}}
-	g = ibis.NewGraph(nodes, links, prefs, cards)
+	g = ibis.NewGraph(nodes, links, prefs, cards, nil, nil, nil)
 	labels = mustBuild(t, g).Grounded()
 
 	assert(t, labels, "B", IN)
@@ -65,7 +65,7 @@ func TestPreferenceCycleFailsLoud(t *testing.T) {
 		{Winner: "B", Loser: "A"},
 	}
 
-	g := ibis.NewGraph(nodes, links, prefs, cards)
+	g := ibis.NewGraph(nodes, links, prefs, cards, nil, nil, nil)
 	_, err := Build(g)
 	var cyc *PreferenceCycleError
 	if err == nil {

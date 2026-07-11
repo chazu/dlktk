@@ -23,7 +23,7 @@ func settledGraph() (*ibis.Graph, *af.Framework, map[string]af.Label) {
 		{ID: "l2", Src: "B", Dst: "I", Rel: ibis.RespondsTo},
 		{ID: "l3", Src: "C", Dst: "B", Rel: ibis.ObjectsTo},
 	}
-	g := ibis.NewGraph(nodes, links, nil, []ibis.IssueCard{{Issue: "I", Cardinality: ibis.SelectOne}})
+	g := ibis.NewGraph(nodes, links, nil, []ibis.IssueCard{{Issue: "I", Cardinality: ibis.SelectOne}}, nil, nil, nil)
 	fw, err := af.Build(g)
 	if err != nil {
 		panic(err)
@@ -56,11 +56,11 @@ func TestMovesSuggestsDecideWhenSettled(t *testing.T) {
 }
 
 func TestAgendaReadyAndUnpopulated(t *testing.T) {
-	g, _, labels := settledGraph()
+	g, fw, labels := settledGraph()
 	// Add an issue with no positions.
 	g.Nodes["J"] = ibis.Node{ID: "J", Kind: ibis.Issue, Text: "which cache?"}
 
-	v := Agenda(g, labels, nil)
+	v := Agenda(g, fw, labels, nil)
 	if len(v.Ready) != 1 || v.Ready[0].Issue != "I" || v.Ready[0].Position != "A" {
 		t.Fatalf("ready wrong: %+v", v.Ready)
 	}
@@ -72,7 +72,7 @@ func TestAgendaReadyAndUnpopulated(t *testing.T) {
 	}
 
 	// Decided -> drops out of ready.
-	v = Agenda(g, labels, []ibis.Decision{{Issue: "I", Position: "A"}})
+	v = Agenda(g, fw, labels, []ibis.Decision{{Issue: "I", Position: "A"}})
 	if len(v.Ready) != 0 {
 		t.Fatalf("decided issue still ready: %+v", v.Ready)
 	}

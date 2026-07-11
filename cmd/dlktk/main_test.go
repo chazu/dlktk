@@ -17,7 +17,7 @@ func TestTargetIssuesDeterministic(t *testing.T) {
 	}
 	want := []string{"aa-issue", "mm-issue", "zz-issue"}
 	for i := 0; i < 50; i++ { // map order varies run to run; hammer it
-		g := ibis.NewGraph(nodes, nil, nil, nil)
+		g := ibis.NewGraph(nodes, nil, nil, nil, nil, nil, nil)
 		got, err := targetIssues(g, nil)
 		if err != nil {
 			t.Fatal(err)

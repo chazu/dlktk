@@ -17,9 +17,11 @@ const (
 type Rel string
 
 const (
-	RespondsTo Rel = "responds_to"
-	Supports   Rel = "supports"
-	ObjectsTo  Rel = "objects_to"
+	RespondsTo  Rel = "responds_to"
+	Supports    Rel = "supports"
+	ObjectsTo   Rel = "objects_to"
+	Synthesizes Rel = "synthesizes" // hybrid position -> parent position (lineage; never reaches the evaluator)
+	RaisedFrom  Rel = "raised_from" // issue -> the position/argument that revealed it (provenance; never reaches the evaluator)
 )
 
 // Cardinality of an issue: select_one positions are mutually exclusive; open
@@ -31,6 +33,11 @@ const (
 	Open      Cardinality = "open"
 )
 
+// TagAssumption marks an argument as a challengeable premise its target rests
+// on. Tags are bookkeeping only: they never reach the evaluator (§3.5 holds);
+// agenda/check use them to surface unexamined or defeated premises.
+const TagAssumption = "assumption"
+
 // Node is an IBIS node. Stored as a dlktk/node fact (args = these fields).
 type Node struct {
 	ID     string `json:"id"`
@@ -38,6 +45,7 @@ type Node struct {
 	Kind   Kind   `json:"kind"`
 	Text   string `json:"text"`
 	Author string `json:"author"`
+	Tag    string `json:"tag,omitempty"` // "assumption" only, for now
 }
 
 // Link is an IBIS link. Stored as a dlktk/link fact.
@@ -72,6 +80,42 @@ type Decision struct {
 	Decider    string `json:"decider"`
 	Override   bool   `json:"override"`
 	Supersedes string `json:"supersedes,omitempty"`
+	ReviewBy   int64  `json:"review_by,omitempty"` // unix seconds; the recorded re-examination horizon (0 = none)
+}
+
+// Reframe records that Old's framing was replaced by New, and why. The old
+// issue's graph is untouched (append-only ethos) but it leaves the live agenda:
+// the question has moved. Basis is mandatory — reframing is the most
+// consequential move a deliberation makes, so its reasoning must be captured
+// (the Q4 ethos applied to framings).
+type Reframe struct {
+	Disc   string `json:"disc"`
+	Old    string `json:"old"`
+	New    string `json:"new"`
+	Basis  string `json:"basis"`
+	Author string `json:"author"`
+}
+
+// ValueTag records that a node promotes a value (throughput, security, …), for
+// audience-relative evaluation (value-based AF). One value per live node; a
+// dangling tag (node conceded) is ignored on load.
+type ValueTag struct {
+	Disc   string `json:"disc"`
+	Node   string `json:"node"`
+	Value  string `json:"value"`
+	Author string `json:"author"`
+}
+
+// Audience is a named strict ranking over values (Ranking[0] is the most
+// important). Under an audience, an attack on a node promoting a strictly
+// higher-ranked value fails. Re-declaring a name requires supersession with a
+// recorded basis (the Q4 pattern).
+type Audience struct {
+	Disc    string   `json:"disc"`
+	Name    string   `json:"name"`
+	Ranking []string `json:"ranking"`
+	Basis   string   `json:"basis,omitempty"`
+	Author  string   `json:"author"`
 }
 
 // Discussion is the unit of scope.
@@ -119,15 +163,23 @@ type Graph struct {
 	Links       []Link
 	Preferences []Preference
 	IssueCards  map[string]Cardinality // issue id -> cardinality
+	Reframes    []Reframe
+	Values      map[string]string   // node id -> promoted value (live nodes only)
+	Audiences   map[string]Audience // name -> currently declared audience
 }
 
-// NewGraph builds an indexed graph from slices.
-func NewGraph(nodes []Node, links []Link, prefs []Preference, cards []IssueCard) *Graph {
+// NewGraph builds an indexed graph from slices. Value tags whose node is absent
+// (conceded and restated) are dropped: they are the expected residue of the
+// change-a-value path and must not influence any audience lens.
+func NewGraph(nodes []Node, links []Link, prefs []Preference, cards []IssueCard, reframes []Reframe, values []ValueTag, audiences []Audience) *Graph {
 	g := &Graph{
 		Nodes:       make(map[string]Node, len(nodes)),
 		Links:       links,
 		Preferences: prefs,
 		IssueCards:  make(map[string]Cardinality, len(cards)),
+		Reframes:    reframes,
+		Values:      make(map[string]string, len(values)),
+		Audiences:   make(map[string]Audience, len(audiences)),
 	}
 	for _, n := range nodes {
 		g.Nodes[n.ID] = n
@@ -135,7 +187,25 @@ func NewGraph(nodes []Node, links []Link, prefs []Preference, cards []IssueCard)
 	for _, c := range cards {
 		g.IssueCards[c.Issue] = c.Cardinality
 	}
+	for _, v := range values {
+		if _, ok := g.Nodes[v.Node]; ok {
+			g.Values[v.Node] = v.Value
+		}
+	}
+	for _, a := range audiences {
+		g.Audiences[a.Name] = a
+	}
 	return g
+}
+
+// ReframedTo returns the issue that replaced this one's framing, if any.
+func (g *Graph) ReframedTo(issue string) (string, bool) {
+	for _, r := range g.Reframes {
+		if r.Old == issue {
+			return r.New, true
+		}
+	}
+	return "", false
 }
 
 // IsAFNode reports whether a node participates in the argumentation framework

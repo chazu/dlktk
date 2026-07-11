@@ -30,8 +30,23 @@ func notFound(node, format string, a ...any) error {
 	return &NotFound{Detail: fmt.Sprintf(format, a...), Node: node}
 }
 
-// CanRaise validates a raise: an optional parent must be an existing issue.
-func (g *Graph) CanRaise(parent string) error {
+// CanRaise validates a raise: an optional parent must be an existing issue; an
+// optional from-node (the position/argument that revealed the new question)
+// must be an existing AF node. Parent and from are mutually exclusive.
+func (g *Graph) CanRaise(parent, from string) error {
+	if parent != "" && from != "" {
+		return illegal(parent, "raise takes --parent or --from, not both")
+	}
+	if from != "" {
+		n, ok := g.Nodes[from]
+		if !ok {
+			return notFound(from, "raise --from node %q not found", from)
+		}
+		if n.Kind != Position && n.Kind != Argument {
+			return illegal(from, "raise --from must name a position or argument, got %s", n.Kind)
+		}
+		return nil
+	}
 	if parent == "" {
 		return nil
 	}
@@ -43,6 +58,118 @@ func (g *Graph) CanRaise(parent string) error {
 		return illegal(parent, "raise parent must be an issue, got %s", n.Kind)
 	}
 	return nil
+}
+
+// CanReframe validates a reframe of an issue's framing: the old issue must
+// exist, be an issue, and not already be reframed. (Whether it carries a
+// standing decision is checked by the move layer, which reads decisions:
+// reframing a decided issue is illegal — supersede the decision first, or the
+// reframe would silently bury it, the Q4 defect in a new hat.)
+func (g *Graph) CanReframe(old string) error {
+	n, ok := g.Nodes[old]
+	if !ok {
+		return notFound(old, "reframe target %q not found", old)
+	}
+	if n.Kind != Issue {
+		return illegal(old, "reframe target must be an issue, got %s", n.Kind)
+	}
+	if to, done := g.ReframedTo(old); done {
+		return illegal(old, "issue %s is already reframed (-> %s); reframe %s instead", old, to, to)
+	}
+	return nil
+}
+
+// CanSynthesize validates a synthesis: a hybrid position built from two or
+// more distinct existing positions on the same issue.
+func (g *Graph) CanSynthesize(issue string, froms []string) error {
+	n, ok := g.Nodes[issue]
+	if !ok {
+		return notFound(issue, "synthesize issue %q not found", issue)
+	}
+	if n.Kind != Issue {
+		return illegal(issue, "synthesize target must be an issue, got %s", n.Kind)
+	}
+	if len(froms) < 2 {
+		return illegal(issue, "synthesize needs at least two --from parent positions (a hybrid of one is just a variant)")
+	}
+	seen := map[string]bool{}
+	for _, f := range froms {
+		if seen[f] {
+			return illegal(f, "synthesize --from %s given twice", f)
+		}
+		seen[f] = true
+		p, ok := g.Nodes[f]
+		if !ok {
+			return notFound(f, "synthesize --from position %q not found", f)
+		}
+		if p.Kind != Position {
+			return illegal(f, "synthesize --from must be a position, got %s", p.Kind)
+		}
+		if !g.respondsTo(f, issue) {
+			return illegal(f, "synthesize --from position %s does not respond_to issue %s", f, issue)
+		}
+	}
+	return nil
+}
+
+// CanPromote validates tagging a node with the value it promotes: the node
+// must be an AF node owned by the author (a value changes the node's fate
+// under every audience lens and is otherwise unretractable, so a stranger must
+// not be able to stamp it), and not already valued. Changing a value = the
+// owner concedes the node and restates it.
+func (g *Graph) CanPromote(node, author string) error {
+	n, ok := g.Nodes[node]
+	if !ok {
+		return notFound(node, "promote target %q not found", node)
+	}
+	if n.Kind != Position && n.Kind != Argument {
+		return illegal(node, "promote target must be a position or argument, got %s", n.Kind)
+	}
+	if n.Author != author {
+		return illegal(node, "cannot promote %s: owned by %s, not %s", node, n.Author, author)
+	}
+	if v, ok := g.Values[node]; ok {
+		return illegal(node, "node %s already promotes %q; to change it, concede the node and restate", node, v)
+	}
+	return nil
+}
+
+// CanAudience validates declaring (or superseding) a named value ranking.
+func (g *Graph) CanAudience(name string, ranking []string, supersede bool) error {
+	if name == "" {
+		return illegal("", "audience needs a name")
+	}
+	if len(ranking) < 2 {
+		return illegal(name, "audience %s needs a ranking of at least two values", name)
+	}
+	seen := map[string]bool{}
+	for _, v := range ranking {
+		if v == "" {
+			return illegal(name, "audience %s ranking contains an empty value", name)
+		}
+		if seen[v] {
+			return illegal(name, "audience %s ranks %q twice (ranking must be a strict order)", name, v)
+		}
+		seen[v] = true
+	}
+	_, exists := g.Audiences[name]
+	if exists && !supersede {
+		return illegal(name, "audience %s is already declared; re-declare with --supersede --basis <label>", name)
+	}
+	if !exists && supersede {
+		return illegal(name, "audience %s does not exist; declare it without --supersede", name)
+	}
+	return nil
+}
+
+// respondsTo reports whether src responds_to dst.
+func (g *Graph) respondsTo(src, dst string) bool {
+	for _, l := range g.Links {
+		if l.Rel == RespondsTo && l.Src == src && l.Dst == dst {
+			return true
+		}
+	}
+	return false
 }
 
 // CanPropose validates a propose: target must be an existing issue.

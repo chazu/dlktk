@@ -189,10 +189,12 @@ func para(prefix, body string) string {
 func suggestionCommand(m MoveSuggestion) string {
 	parts := append([]string{"dlktk", m.Move}, m.Args...)
 	switch m.Move {
-	case "object", "support", "propose":
+	case "object", "support", "propose", "assume", "synthesize":
 		parts = append(parts, `"<text>"`)
 	case "prefer", "supersede":
 		parts = append(parts, "--basis", "<label>")
+	case "reframe":
+		parts = append(parts, `"<text>"`, "--basis", "<label>")
 	case "decide":
 		parts = append(parts, "[--basis <label>]")
 	}

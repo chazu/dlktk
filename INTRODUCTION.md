@@ -275,6 +275,7 @@ Every verb is equally drivable by a program. Add `--format json` to any read for
 ## Where to go next
 
 - [`README.md`](README.md) — install, quick example, command summary.
+- [`wicked-problems.md`](wicked-problems.md) — why adjudication alone isn't enough for open-ended ("wicked") questions, and the divergence/exploration features built for them: untested-winner surfacing, `reframe`/`synthesize`/`assume`, `whatif`/`crux`/`worlds`, value audiences, review horizons.
 - [`dlktk-design.md`](dlktk-design.md) — the full design, including the grounded-semantics implementation (§4) and the resolved design questions (§16), several of which were *themselves* decided by running the dialectic through dlktk.
 - [`examples/`](examples/) — real, replayable discussions (`dlktk import examples/q2-preference-transitivity.ndjson`), each a worked argument with a recorded outcome.
 - Phan Minh Dung, *"On the acceptability of arguments…"* (1995) — the original paper behind the labelling, if you want the theory.

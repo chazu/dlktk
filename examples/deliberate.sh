@@ -38,6 +38,12 @@ RWLOCK=$(move maintainer propose "$ISSUE" "RWLock — readers should not seriali
 say "status: a symmetric tie — the engine says so"
 "$DLKTK" status "$ISSUE" -d "$DISC" --store "$STORE" $VIEW
 
+say "first-principles names the premise everything rests on (assume)"
+ASSUME=$(move first-principles assume "$RWLOCK" "the cache stays read-heavy as traffic grows")
+
+say "agenda: the unexamined assumption is on the worklist"
+"$DLKTK" agenda -d "$DISC" --store "$STORE" $VIEW
+
 say "security checks for prior art before arguing (search), then objects"
 "$DLKTK" search "starvation" -d "$DISC" --store "$STORE" $VIEW
 STARVE=$(move security object "$RWLOCK" "writer starvation under sustained read load")
@@ -45,18 +51,32 @@ STARVE=$(move security object "$RWLOCK" "writer starvation under sustained read 
 say "maintainer rebuts the objection (defend by counter-attack)"
 move maintainer object "$STARVE" "cache is 99% reads; starvation cannot occur" >/dev/null
 
-say "moves: what the engine considers useful next"
+say "worlds: the coherent stances the deadlock admits (exploration, not verdict)"
+"$DLKTK" worlds "$ISSUE" -d "$DISC" --store "$STORE" $VIEW
+
+say "whatif: probe a preference before committing to it (nothing written)"
+"$DLKTK" whatif "$ISSUE" --prefer "$RWLOCK:$MUTEX" -d "$DISC" --store "$STORE" $VIEW
+
+say "moves: what the engine considers useful next (note the generative exits)"
 "$DLKTK" moves "$ISSUE" -d "$DISC" --store "$STORE" $VIEW
 
-say "stalemate -> a preference, with an honest basis"
+say "shipper tries the synthesis exit: a hybrid with recorded lineage"
+HYBRID=$(move shipper synthesize "$ISSUE" "RWLock with a writer-priority escape hatch" --from "$MUTEX" --from "$RWLOCK")
+
+say "the hybrid joins the rivalry — preferences (honest bases) settle the 3-way tie"
+move maintainer prefer "$RWLOCK" "$HYBRID" --basis simplicity >/dev/null
 move shipper prefer "$RWLOCK" "$MUTEX" --basis throughput >/dev/null
+
+say "crux: which argument does the verdict actually rest on?"
+"$DLKTK" crux "$ISSUE" -d "$DISC" --store "$STORE" $VIEW
 
 say "explain: the full derivation that settled it"
 "$DLKTK" explain "$ISSUE" --brief -d "$DISC" --store "$STORE" $VIEW
 
-say "agenda is ready -> decide, then verify nothing drifted"
+say "agenda is ready -> decide (with a review horizon), then verify nothing drifted"
 "$DLKTK" agenda -d "$DISC" --store "$STORE" $VIEW
-"$DLKTK" decide "$ISSUE" "$RWLOCK" --basis throughput -d "$DISC" --store "$STORE" --author shipper-bot --role shipper
+REVIEW=$(python3 -c 'import time; print(int(time.time()) + 180*24*3600)')
+"$DLKTK" decide "$ISSUE" "$RWLOCK" --basis throughput --review-by "$REVIEW" -d "$DISC" --store "$STORE" --author shipper-bot --role shipper
 "$DLKTK" check -d "$DISC" --store "$STORE" $VIEW
 
 say "the roster: who argued under which persona (auto-recorded from the moves)"

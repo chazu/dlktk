@@ -2,6 +2,7 @@ package check
 
 import (
 	"testing"
+	"time"
 
 	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/proto"
@@ -23,7 +24,7 @@ func open(t *testing.T) (*store.Store, *proto.Mover) {
 
 func run(t *testing.T, s *store.Store) View {
 	t.Helper()
-	v, err := Run(s, []string{"d"}, store.Now())
+	v, err := Run(s, []string{"d"}, store.Now(), time.Now().Unix())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,9 +45,15 @@ func only(t *testing.T, v View, kind, severity string) Finding {
 
 func TestCleanDiscussionPasses(t *testing.T) {
 	s, m := open(t)
-	issue, _ := m.Raise("d", "q?", "", "")
-	pos, _ := m.Propose("d", issue, "yes")
-	if err := m.Decide("d", issue, pos, "obvious"); err != nil {
+	issue, _ := m.Raise("d", "q?", "", "", "")
+	pos, _ := m.Propose("d", issue, "yes", "")
+	// Battle-test the position (objection + rebuttal reinstates it) so the
+	// decision is examined, not merely unopposed.
+	obj, _ := m.Object("d", pos, "objection", "")
+	if _, err := m.Object("d", obj, "rebuttal", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Decide("d", issue, pos, "obvious", 0); err != nil {
 		t.Fatal(err)
 	}
 	v := run(t, s)
@@ -59,12 +66,12 @@ func TestCleanDiscussionPasses(t *testing.T) {
 // moves out from under it (here: a fresh, undefeated objection).
 func TestDecisionDrift(t *testing.T) {
 	s, m := open(t)
-	issue, _ := m.Raise("d", "q?", "", "")
-	pos, _ := m.Propose("d", issue, "yes")
-	if err := m.Decide("d", issue, pos, "looked solid"); err != nil {
+	issue, _ := m.Raise("d", "q?", "", "", "")
+	pos, _ := m.Propose("d", issue, "yes", "")
+	if err := m.Decide("d", issue, pos, "looked solid", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Object("d", pos, "new constraint kills this"); err != nil {
+	if _, err := m.Object("d", pos, "new constraint kills this", ""); err != nil {
 		t.Fatal(err)
 	}
 	v := run(t, s)
@@ -78,12 +85,12 @@ func TestDecisionDrift(t *testing.T) {
 // not drift.
 func TestOverrideDecisionIsNotDrift(t *testing.T) {
 	s, m := open(t)
-	issue, _ := m.Raise("d", "q?", "", "")
-	pos, _ := m.Propose("d", issue, "yes")
-	if _, err := m.Object("d", pos, "objection"); err != nil {
+	issue, _ := m.Raise("d", "q?", "", "", "")
+	pos, _ := m.Propose("d", issue, "yes", "")
+	if _, err := m.Object("d", pos, "objection", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Decide("d", issue, pos, "time-boxed call"); err != nil { // pos is OUT -> override
+	if err := m.Decide("d", issue, pos, "time-boxed call", 0); err != nil { // pos is OUT -> override
 		t.Fatal(err)
 	}
 	v := run(t, s)
@@ -94,11 +101,11 @@ func TestOverrideDecisionIsNotDrift(t *testing.T) {
 
 func TestStalemateWarns(t *testing.T) {
 	s, m := open(t)
-	issue, _ := m.Raise("d", "q?", "", "")
-	if _, err := m.Propose("d", issue, "a"); err != nil {
+	issue, _ := m.Raise("d", "q?", "", "", "")
+	if _, err := m.Propose("d", issue, "a", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Propose("d", issue, "b"); err != nil {
+	if _, err := m.Propose("d", issue, "b", ""); err != nil {
 		t.Fatal(err)
 	}
 	v := run(t, s)
@@ -115,9 +122,9 @@ func TestStalemateWarns(t *testing.T) {
 // check must surface the resulting invariant violations.
 func TestPreferenceCycleAndDuplicateNode(t *testing.T) {
 	s, m := open(t)
-	issue, _ := m.Raise("d", "q?", "", "")
-	a, _ := m.Propose("d", issue, "a")
-	b, _ := m.Propose("d", issue, "b")
+	issue, _ := m.Raise("d", "q?", "", "", "")
+	a, _ := m.Propose("d", issue, "a", "")
+	b, _ := m.Propose("d", issue, "b", "")
 	if err := s.AddPreference(ibis.Preference{ID: "p1", Disc: "d", Winner: a, Loser: b, Author: "x"}); err != nil {
 		t.Fatal(err)
 	}
