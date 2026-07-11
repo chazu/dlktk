@@ -2,6 +2,7 @@
 
 **Status:** draft / for review
 **Working name:** `dlktk` (dialectic) Binary, package, and on-disk artifact names below assume `dlktk`.
+**Extension:** the wicked-problems batch (contract 0.10.0) — divergence, exploration, and plural-value support layered on this design without changing the grounded referee — is designed in [`wicked-problems.md`](wicked-problems.md) and planned in [`wicked-problems-plan.md`](wicked-problems-plan.md). It adds the `reframe`/`synthesize`/`assume`/`promote`/`audience` moves, the `whatif`/`crux`/`worlds`/`audiences` reads, `raise --from`, `decide --review-by`, and — to §3's data model — the `dlktk/reframe`, `dlktk/value`, `dlktk/audience` relations, the `synthesizes`/`raised_from` link rels, a node `tag`, and a decision `review_by`.
 **One-liner:** A lightweight, git-native CLI that records design dialectics as an IBIS graph, evaluates "what currently stands" via Dung grounded semantics over a defeat relation, and exposes the whole thing through a dual human/agent interface backed by [pudl](https://github.com/chazu/pudl)'s bitemporal fact store.
 
 **Storage decision:** dlktk embeds pudl's public Go API (`github.com/chazu/pudl/pkg/factstore`, `.../pkg/eval`) as its persistence layer. It writes into the repo's existing pudl store (`.pudl/`), under a reserved `dlktk/*` relation namespace, so dialectics live beside observations and the catalog without interfering with normal pudl use. See §3 and §12.

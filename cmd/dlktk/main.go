@@ -97,9 +97,11 @@ func root() *cobra.Command {
 
 	c.AddCommand(
 		cmdNew(), cmdUse(), cmdList(), cmdRoster(),
-		cmdRaise(), cmdPropose(), cmdSupport(), cmdObject(), cmdPrefer(), cmdDecide(), cmdSupersede(),
+		cmdRaise(), cmdReframe(), cmdPropose(), cmdSynthesize(), cmdSupport(), cmdObject(), cmdAssume(),
+		cmdPrefer(), cmdPromote(), cmdAudience(), cmdDecide(), cmdSupersede(),
 		cmdConcede("concede"), cmdConcede("retract"),
-		cmdStatus(), cmdTree(), cmdShow(), cmdSearch(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(), cmdDiscover(),
+		cmdStatus(), cmdTree(), cmdShow(), cmdSearch(), cmdAgenda(), cmdMoves(), cmdWhy(), cmdExplain(),
+		cmdWhatIf(), cmdCrux(), cmdWorlds(), cmdAudiences(), cmdDiscover(),
 		cmdReplay(), cmdLog(), cmdCheck(),
 		cmdExport(), cmdImport(), cmdSchema(), cmdAnchored(), cmdMCP(),
 	)
@@ -268,20 +270,192 @@ func loadFramework() (*ibis.Graph, *af.Framework, map[string]af.Label, []ibis.De
 func cmdAgenda() *cobra.Command {
 	return &cobra.Command{
 		Use:   "agenda",
-		Short: "the worklist: UNDEC nodes, issues ready to decide, issues with no positions",
+		Short: "the worklist: UNDEC nodes, issues ready to decide, issues with no positions, untested winners, unexamined assumptions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, _, labels, decs, err := loadFramework()
+			g, fw, labels, decs, err := loadFramework()
 			if err != nil {
 				return err
 			}
-			v := render.Agenda(g, labels, decs)
+			v := render.Agenda(g, fw, labels, decs)
 			if wantJSON() {
 				out, _ := render.JSON(v)
 				fmt.Println(out)
 				return nil
 			}
 			fmt.Print(render.AgendaText(v))
+			return nil
+		},
+	}
+}
+
+func cmdWhatIf() *cobra.Command {
+	var objects, prefers, withouts []string
+	c := &cobra.Command{
+		Use:   "whatif <issue>",
+		Short: "counterfactual: apply hypothetical moves in memory and report the label diff (nothing written)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			g, _, labels, _, err := loadFramework()
+			if err != nil {
+				return err
+			}
+			if n, ok := g.Nodes[args[0]]; !ok || n.Kind != ibis.Issue {
+				return fail.NotFound(args[0], "issue %q not found", args[0])
+			}
+			hyps, err := parseHypFlags(objects, prefers, withouts)
+			if err != nil {
+				return err
+			}
+			v, err := render.WhatIf(g, labels, args[0], hyps)
+			if err != nil {
+				return err
+			}
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.WhatIfText(v))
+			return nil
+		},
+	}
+	c.Flags().StringArrayVar(&objects, "object", nil, "hypothetically object to this node (repeatable)")
+	c.Flags().StringArrayVar(&prefers, "prefer", nil, "hypothetical preference winner:loser (repeatable)")
+	c.Flags().StringArrayVar(&withouts, "without", nil, "hypothetically remove this node — a simulated concede (repeatable)")
+	return c
+}
+
+// parseHypFlags assembles hypotheticals from the repeatable whatif flags.
+func parseHypFlags(objects, prefers, withouts []string) ([]render.Hypothetical, error) {
+	var hyps []render.Hypothetical
+	for _, t := range objects {
+		hyps = append(hyps, render.HypObject(t))
+	}
+	for _, p := range prefers {
+		w, l, found := strings.Cut(p, ":")
+		if !found || w == "" || l == "" {
+			return nil, fail.New(fail.CodeIllegal, "bad_args", "--prefer %q must be winner:loser", p)
+		}
+		hyps = append(hyps, render.HypPrefer(w, l))
+	}
+	for _, n := range withouts {
+		hyps = append(hyps, render.HypWithout(n))
+	}
+	if len(hyps) == 0 {
+		return nil, fail.New(fail.CodeIllegal, "bad_args", "whatif needs at least one hypothetical: --object, --prefer, or --without")
+	}
+	return hyps, nil
+}
+
+func cmdCrux() *cobra.Command {
+	return &cobra.Command{
+		Use:   "crux <issue>",
+		Short: "the load-bearing arguments: which single argument's removal flips a position",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			g, _, labels, _, err := loadFramework()
+			if err != nil {
+				return err
+			}
+			if n, ok := g.Nodes[args[0]]; !ok || n.Kind != ibis.Issue {
+				return fail.NotFound(args[0], "issue %q not found", args[0])
+			}
+			v, err := render.Crux(g, labels, args[0])
+			if err != nil {
+				return err
+			}
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.CruxText(v))
+			return nil
+		},
+	}
+}
+
+func cmdWorlds() *cobra.Command {
+	var under string
+	c := &cobra.Command{
+		Use:   "worlds <issue>",
+		Short: "the coherent maximal stances (preferred extensions) a contested issue admits",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			g, fw, _, _, err := loadFramework()
+			if err != nil {
+				return err
+			}
+			if n, ok := g.Nodes[args[0]]; !ok || n.Kind != ibis.Issue {
+				return fail.NotFound(args[0], "issue %q not found", args[0])
+			}
+			if under != "" {
+				if fw, _, err = frameworkUnder(g, under); err != nil {
+					return err
+				}
+			}
+			v := render.Worlds(g, fw, args[0])
+			v.Under = under
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.WorldsText(v))
+			return nil
+		},
+	}
+	c.Flags().StringVar(&under, "under", "", "audience name: enumerate under that value ranking")
+	return c
+}
+
+// frameworkUnder rebuilds the framework and labelling under a named audience.
+func frameworkUnder(g *ibis.Graph, name string) (*af.Framework, map[string]af.Label, error) {
+	aud, ok := g.Audiences[name]
+	if !ok {
+		return nil, nil, fail.NotFound(name, "audience %q not declared", name)
+	}
+	fw, err := af.BuildUnder(g, aud)
+	if err != nil {
+		return nil, nil, err
+	}
+	return fw, fw.Grounded(), nil
+}
+
+func cmdAudiences() *cobra.Command {
+	return &cobra.Command{
+		Use:   "audiences",
+		Short: "cross-audience sensitivity: which positions are justified under every declared value ranking",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			disc, err := resolveDisc()
+			if err != nil {
+				return err
+			}
+			s, err := openStore()
+			if err != nil {
+				return err
+			}
+			defer s.Close()
+			w, err := when()
+			if err != nil {
+				return err
+			}
+			g, err := s.Graph(disc, w)
+			if err != nil {
+				return err
+			}
+			v, err := render.Audiences(g)
+			if err != nil {
+				return err
+			}
+			if wantJSON() {
+				out, _ := render.JSON(v)
+				fmt.Println(out)
+				return nil
+			}
+			fmt.Print(render.AudiencesText(v))
 			return nil
 		},
 	}
@@ -422,6 +596,7 @@ func cmdWhy() *cobra.Command {
 
 func cmdExplain() *cobra.Command {
 	var brief bool
+	var under string
 	c := &cobra.Command{
 		Use:   "explain <issue>",
 		Short: "trace how an issue's labelling was derived (the automated reasoning)",
@@ -455,6 +630,11 @@ func cmdExplain() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if under != "" {
+				if fw, _, err = frameworkUnder(g, under); err != nil {
+					return err
+				}
+			}
 			v := render.Explain(g, fw, args[0], decs)
 			if wantJSON() {
 				out, _ := render.JSON(v)
@@ -466,6 +646,7 @@ func cmdExplain() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&brief, "brief", false, "omit the conceptual primer; show only the trace and outcome")
+	c.Flags().StringVar(&under, "under", "", "audience name: derive under that value ranking")
 	return c
 }
 
@@ -582,7 +763,13 @@ func cmdCheck() *cobra.Command {
 				}
 				discs = []string{disc}
 			}
-			v, err := check.Run(s, discs, w)
+			// Review horizons are judged against the --as-of time when
+			// travelling, the wall clock otherwise.
+			now := time.Now().Unix()
+			if w.Tx != nil {
+				now = *w.Tx
+			}
+			v, err := check.Run(s, discs, w, now)
 			if err != nil {
 				return err
 			}
@@ -958,20 +1145,27 @@ func cmdRoster() *cobra.Command {
 
 // --- move commands ---
 
+// validCard rejects a bad --card value before the move layer sees it.
+func validCard(card string) error {
+	switch card {
+	case "", string(ibis.SelectOne), string(ibis.Open):
+		return nil
+	}
+	return fail.New(fail.CodeIllegal, "bad_cardinality", "--card must be %q or %q, got %q", ibis.SelectOne, ibis.Open, card)
+}
+
 func cmdRaise() *cobra.Command {
-	var parent, card string
+	var parent, from, card string
 	c := &cobra.Command{
 		Use:   "raise <text>",
 		Short: "raise an issue",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			switch card {
-			case "", string(ibis.SelectOne), string(ibis.Open):
-			default:
-				return fail.New(fail.CodeIllegal, "bad_cardinality", "--card must be %q or %q, got %q", ibis.SelectOne, ibis.Open, card)
+			if err := validCard(card); err != nil {
+				return err
 			}
 			return withMover(func(disc string, m *proto.Mover) error {
-				idv, err := m.Raise(disc, args[0], parent, ibis.Cardinality(card))
+				idv, err := m.Raise(disc, args[0], parent, from, ibis.Cardinality(card))
 				if err != nil {
 					return err
 				}
@@ -981,18 +1175,45 @@ func cmdRaise() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&parent, "parent", "", "parent issue id")
+	c.Flags().StringVar(&from, "from", "", "the position/argument that revealed this question (records provenance; mutually exclusive with --parent)")
 	c.Flags().StringVar(&card, "card", "", "cardinality: select_one (default) or open; fixed at creation")
 	return c
 }
 
+func cmdReframe() *cobra.Command {
+	var basis, card string
+	c := &cobra.Command{
+		Use:   "reframe <issue> <text>",
+		Short: "replace an issue's framing with a fresh issue (basis required; positions do not carry over)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validCard(card); err != nil {
+				return err
+			}
+			return withMover(func(disc string, m *proto.Mover) error {
+				idv, err := m.Reframe(disc, args[0], args[1], basis, ibis.Cardinality(card))
+				if err != nil {
+					return err
+				}
+				emitID("issue", idv)
+				return nil
+			})
+		},
+	}
+	c.Flags().StringVar(&basis, "basis", "", "why the framing is replaced (required)")
+	c.Flags().StringVar(&card, "card", "", "cardinality of the new issue: select_one (default) or open")
+	return c
+}
+
 func cmdPropose() *cobra.Command {
-	return &cobra.Command{
+	var promotes string
+	c := &cobra.Command{
 		Use:   "propose <issue> <text>",
 		Short: "propose a position on an issue",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withMover(func(disc string, m *proto.Mover) error {
-				idv, err := m.Propose(disc, args[0], args[1])
+				idv, err := m.Propose(disc, args[0], args[1], promotes)
 				if err != nil {
 					return err
 				}
@@ -1001,16 +1222,83 @@ func cmdPropose() *cobra.Command {
 			})
 		},
 	}
+	c.Flags().StringVar(&promotes, "promotes", "", "the value this position promotes (audience lens input)")
+	return c
+}
+
+func cmdSynthesize() *cobra.Command {
+	var froms []string
+	var promotes string
+	c := &cobra.Command{
+		Use:   "synthesize <issue> <text>",
+		Short: "propose a hybrid position recombining two or more existing positions (lineage recorded)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withMover(func(disc string, m *proto.Mover) error {
+				idv, err := m.Synthesize(disc, args[0], args[1], froms, promotes)
+				if err != nil {
+					return err
+				}
+				emitID("position", idv)
+				return nil
+			})
+		},
+	}
+	c.Flags().StringArrayVar(&froms, "from", nil, "parent position id (repeat; at least two)")
+	c.Flags().StringVar(&promotes, "promotes", "", "the value the hybrid promotes")
+	return c
 }
 
 func cmdSupport() *cobra.Command {
-	return &cobra.Command{
+	var promotes string
+	c := &cobra.Command{
 		Use:   "support <target> <text>",
 		Short: "argue in support of a position or argument",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withMover(func(disc string, m *proto.Mover) error {
-				idv, err := m.Support(disc, args[0], args[1])
+				idv, err := m.Support(disc, args[0], args[1], promotes)
+				if err != nil {
+					return err
+				}
+				emitID("argument", idv)
+				return nil
+			})
+		},
+	}
+	c.Flags().StringVar(&promotes, "promotes", "", "the value this argument promotes (audience lens input)")
+	return c
+}
+
+func cmdObject() *cobra.Command {
+	var promotes string
+	c := &cobra.Command{
+		Use:   "object <target> <text>",
+		Short: "object to a position or argument",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withMover(func(disc string, m *proto.Mover) error {
+				idv, err := m.Object(disc, args[0], args[1], promotes)
+				if err != nil {
+					return err
+				}
+				emitID("argument", idv)
+				return nil
+			})
+		},
+	}
+	c.Flags().StringVar(&promotes, "promotes", "", "the value this argument promotes (audience lens input)")
+	return c
+}
+
+func cmdAssume() *cobra.Command {
+	return &cobra.Command{
+		Use:   "assume <target> <text>",
+		Short: "record an assumption the target rests on (challengeable premise; agenda tracks unexamined ones)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withMover(func(disc string, m *proto.Mover) error {
+				idv, err := m.Assume(disc, args[0], args[1])
 				if err != nil {
 					return err
 				}
@@ -1021,22 +1309,89 @@ func cmdSupport() *cobra.Command {
 	}
 }
 
-func cmdObject() *cobra.Command {
+func cmdPromote() *cobra.Command {
 	return &cobra.Command{
-		Use:   "object <target> <text>",
-		Short: "object to a position or argument",
+		Use:   "promote <node> <value>",
+		Short: "tag one of your own nodes with the value it promotes (audience lens input)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withMover(func(disc string, m *proto.Mover) error {
-				idv, err := m.Object(disc, args[0], args[1])
-				if err != nil {
+				if err := m.Promote(disc, args[0], args[1]); err != nil {
 					return err
 				}
-				emitID("argument", idv)
+				if wantJSON() {
+					out, _ := render.JSON(map[string]string{"node": args[0], "value": args[1]})
+					fmt.Println(out)
+				} else {
+					fmt.Printf("%s promotes %s\n", args[0], args[1])
+				}
 				return nil
 			})
 		},
 	}
+}
+
+func cmdAudience() *cobra.Command {
+	var supersede bool
+	var basis string
+	c := &cobra.Command{
+		Use:   "audience [<name> <value>...]",
+		Short: "declare a named strict value ranking (most important first), or list declared audiences",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				// List the declared audiences.
+				disc, err := resolveDisc()
+				if err != nil {
+					return err
+				}
+				s, err := openStore()
+				if err != nil {
+					return err
+				}
+				defer s.Close()
+				w, err := when()
+				if err != nil {
+					return err
+				}
+				auds, err := s.Audiences(disc, w)
+				if err != nil {
+					return err
+				}
+				sort.Slice(auds, func(i, j int) bool { return auds[i].Name < auds[j].Name })
+				if wantJSON() {
+					out, _ := render.JSON(auds)
+					fmt.Println(out)
+					return nil
+				}
+				for _, a := range auds {
+					fmt.Printf("%s  %s\n", a.Name, strings.Join(a.Ranking, " > "))
+				}
+				if len(auds) == 0 {
+					fmt.Println("no audiences declared")
+				}
+				return nil
+			}
+			if len(args) < 3 {
+				return fail.New(fail.CodeIllegal, "bad_args", "audience takes <name> followed by at least two values (most important first)")
+			}
+			return withMover(func(disc string, m *proto.Mover) error {
+				if err := m.DeclareAudience(disc, args[0], args[1:], supersede, basis); err != nil {
+					return err
+				}
+				if wantJSON() {
+					out, _ := render.JSON(map[string]any{"name": args[0], "ranking": args[1:]})
+					fmt.Println(out)
+				} else {
+					fmt.Printf("audience %s: %s\n", args[0], strings.Join(args[1:], " > "))
+				}
+				return nil
+			})
+		},
+	}
+	c.Flags().BoolVar(&supersede, "supersede", false, "replace an existing declaration of this name (requires --basis)")
+	c.Flags().StringVar(&basis, "basis", "", "why the prior ranking is retired (required with --supersede)")
+	return c
 }
 
 func cmdPrefer() *cobra.Command {
@@ -1061,14 +1416,18 @@ func cmdPrefer() *cobra.Command {
 }
 
 func cmdDecide() *cobra.Command {
-	var basis string
+	var basis, reviewBy string
 	c := &cobra.Command{
 		Use:   "decide <issue> <position>",
 		Short: "decide an issue by accepting a position",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			rb, err := parseReviewBy(reviewBy)
+			if err != nil {
+				return err
+			}
 			return withMover(func(disc string, m *proto.Mover) error {
-				if err := m.Decide(disc, args[0], args[1], basis); err != nil {
+				if err := m.Decide(disc, args[0], args[1], basis, rb); err != nil {
 					return err
 				}
 				if !wantJSON() {
@@ -1082,18 +1441,35 @@ func cmdDecide() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&basis, "basis", "", "basis label")
+	c.Flags().StringVar(&reviewBy, "review-by", "", "re-examination horizon (RFC3339 or Unix seconds); check reports the decision once it passes")
 	return c
 }
 
+// parseReviewBy parses the --review-by flag (empty = none).
+func parseReviewBy(val string) (int64, error) {
+	t, err := parseTime("--review-by", val)
+	if err != nil {
+		return 0, err
+	}
+	if t == nil {
+		return 0, nil
+	}
+	return *t, nil
+}
+
 func cmdSupersede() *cobra.Command {
-	var basis string
+	var basis, reviewBy string
 	c := &cobra.Command{
 		Use:   "supersede <issue> <position>",
-		Short: "overturn the standing decision on an issue (basis required)",
+		Short: "overturn the standing decision on an issue (basis required); same position + new --review-by re-arms a review horizon",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			rb, err := parseReviewBy(reviewBy)
+			if err != nil {
+				return err
+			}
 			return withMover(func(disc string, m *proto.Mover) error {
-				if err := m.Supersede(disc, args[0], args[1], basis); err != nil {
+				if err := m.Supersede(disc, args[0], args[1], basis, rb); err != nil {
 					return err
 				}
 				if !wantJSON() {
@@ -1107,6 +1483,7 @@ func cmdSupersede() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&basis, "basis", "", "why the prior decision is overturned (required)")
+	c.Flags().StringVar(&reviewBy, "review-by", "", "re-examination horizon (RFC3339 or Unix seconds)")
 	return c
 }
 
@@ -1132,7 +1509,8 @@ func cmdConcede(name string) *cobra.Command {
 // --- read commands ---
 
 func cmdStatus() *cobra.Command {
-	return &cobra.Command{
+	var under string
+	c := &cobra.Command{
 		Use:   "status [issue]",
 		Short: "grounded labelling of positions",
 		Args:  cobra.MaximumNArgs(1),
@@ -1163,6 +1541,11 @@ func cmdStatus() *cobra.Command {
 				return err
 			}
 			labels := fw.Grounded()
+			if under != "" {
+				if fw, labels, err = frameworkUnder(g, under); err != nil {
+					return err
+				}
+			}
 
 			issues, err := targetIssues(g, args)
 			if err != nil {
@@ -1170,7 +1553,9 @@ func cmdStatus() *cobra.Command {
 			}
 			var views []render.IssueStatus
 			for _, iss := range issues {
-				views = append(views, render.Status(g, fw, labels, iss, decs))
+				st := render.Status(g, fw, labels, iss, decs)
+				st.Under = under
+				views = append(views, st)
 			}
 			if wantJSON() {
 				out, _ := render.JSON(views)
@@ -1186,6 +1571,8 @@ func cmdStatus() *cobra.Command {
 			return nil
 		},
 	}
+	c.Flags().StringVar(&under, "under", "", "audience name: evaluate under that value ranking")
+	return c
 }
 
 func cmdTree() *cobra.Command {
@@ -1285,6 +1672,9 @@ func withMover(fn func(disc string, m *proto.Mover) error) error {
 	return fn(disc, mover(s))
 }
 
+// targetIssues resolves the issue argument, or — in the all-issues sweep —
+// every live issue: reframed (dead) framings are excluded, though naming one
+// explicitly still works.
 func targetIssues(g *ibis.Graph, args []string) ([]string, error) {
 	if len(args) == 1 {
 		if n, ok := g.Nodes[args[0]]; !ok || n.Kind != ibis.Issue {
@@ -1292,5 +1682,11 @@ func targetIssues(g *ibis.Graph, args []string) ([]string, error) {
 		}
 		return []string{args[0]}, nil
 	}
-	return g.Issues(), nil
+	var out []string
+	for _, iss := range g.Issues() {
+		if _, reframed := g.ReframedTo(iss); !reframed {
+			out = append(out, iss)
+		}
+	}
+	return out, nil
 }

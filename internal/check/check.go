@@ -10,18 +10,23 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/chazu/dlktk/internal/af"
+	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/render"
 	"github.com/chazu/dlktk/internal/store"
 )
 
 // Finding kinds.
 const (
-	DecisionDrift   = "decision_drift"   // decided position no longer IN (error)
-	PreferenceCycle = "preference_cycle" // stored preferences cyclic (error)
-	StoreInvariant  = "store_invariant"  // e.g. duplicate current node ids (error)
-	Stalemate       = "stalemate"        // all positions UNDEC (warning)
+	DecisionDrift      = "decision_drift"      // decided position no longer IN (error)
+	PreferenceCycle    = "preference_cycle"    // stored preferences cyclic (error)
+	StoreInvariant     = "store_invariant"     // e.g. duplicate current node ids (error)
+	Stalemate          = "stalemate"           // all positions UNDEC (warning)
+	UntestedDecision   = "untested_decision"   // decided position never attacked (warning)
+	ReviewDue          = "review_due"          // decision's review horizon has passed (warning)
+	DefeatedAssumption = "defeated_assumption" // decided position rests on an OUT assumption (warning)
 )
 
 // Finding is one problem (or warning) detected in a discussion.
@@ -42,14 +47,16 @@ type View struct {
 	OK          bool      `json:"ok"`
 }
 
-// Run checks the given discussions at the given temporal viewpoint. Output is
-// deterministic: discussions and issues are visited in sorted order.
-func Run(s *store.Store, discs []string, w store.When) (View, error) {
+// Run checks the given discussions at the given temporal viewpoint. nowUnix is
+// the moment review horizons are judged against — the --as-of time when
+// travelling, wall clock otherwise. Output is deterministic: discussions and
+// issues are visited in sorted order.
+func Run(s *store.Store, discs []string, w store.When, nowUnix int64) (View, error) {
 	v := View{Discussions: len(discs)}
 	sorted := append([]string{}, discs...)
 	sort.Strings(sorted)
 	for _, disc := range sorted {
-		fs, err := runOne(s, disc, w)
+		fs, err := runOne(s, disc, w, nowUnix)
 		if err != nil {
 			return View{}, err
 		}
@@ -65,7 +72,7 @@ func Run(s *store.Store, discs []string, w store.When) (View, error) {
 	return v, nil
 }
 
-func runOne(s *store.Store, disc string, w store.When) ([]Finding, error) {
+func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding, error) {
 	var out []Finding
 
 	// Store invariant: a node id must be current in at most one fact (§3.1).
@@ -122,7 +129,34 @@ func runOne(s *store.Store, disc string, w store.When) ([]Finding, error) {
 				})
 			}
 		}
-		if st.Stalemate {
+		if d := st.Decided; d != nil {
+			// A decision that survived zero tests is the kind most likely to
+			// rot: IN by silence, not by surviving attack.
+			if labels[d.Position] == af.IN && len(attackersOf(fw, d.Position)) == 0 {
+				out = append(out, Finding{
+					Kind: UntestedDecision, Severity: "warning", Discussion: disc, Issue: issue, Node: d.Position,
+					Detail: fmt.Sprintf("decided position %s was never attacked; its IN label is unexamined, not vindicated — stress-test it", d.Position),
+				})
+			}
+			// Temporal drift: the recorded re-examination horizon has passed.
+			if d.ReviewBy != 0 && d.ReviewBy < nowUnix {
+				out = append(out, Finding{
+					Kind: ReviewDue, Severity: "warning", Discussion: disc, Issue: issue, Node: d.Position,
+					Detail: fmt.Sprintf("decision on %s is past its review horizon (%s); re-affirm or revise via supersede", issue, time.Unix(d.ReviewBy, 0).UTC().Format("2006-01-02")),
+				})
+			}
+			// A rebuttal demolished a premise but nobody revisited the
+			// conclusion standing on it.
+			for _, a := range defeatedAssumptions(g, labels, d.Position) {
+				out = append(out, Finding{
+					Kind: DefeatedAssumption, Severity: "warning", Discussion: disc, Issue: issue, Node: a,
+					Detail: fmt.Sprintf("decided position %s rests on assumption %s, which is now defeated (OUT); re-argue or supersede", d.Position, a),
+				})
+			}
+		}
+		if st.Stalemate && st.ReframedTo == "" {
+			// A stalemate under a reframed (dead) framing is no longer the
+			// live question; only current framings warrant the warning.
 			out = append(out, Finding{
 				Kind: Stalemate, Severity: "warning", Discussion: disc, Issue: issue,
 				Detail: fmt.Sprintf("all %d positions UNDEC; a preference is needed to resolve", len(st.Positions)),
@@ -130,6 +164,42 @@ func runOne(s *store.Store, disc string, w store.When) ([]Finding, error) {
 		}
 	}
 	return out, nil
+}
+
+// attackersOf lists the distinct attackers of a node in the raw attack relation.
+func attackersOf(fw *af.Framework, node string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range fw.Attack {
+		if e.To == node && !seen[e.From] {
+			seen[e.From] = true
+			out = append(out, e.From)
+		}
+	}
+	return out
+}
+
+// defeatedAssumptions returns the OUT-labelled assumption nodes on the
+// transitive supports-chain into a position, sorted.
+func defeatedAssumptions(g *ibis.Graph, labels map[string]af.Label, position string) []string {
+	supporters := map[string]bool{position: true}
+	for changed := true; changed; {
+		changed = false
+		for _, l := range g.Links {
+			if l.Rel == ibis.Supports && supporters[l.Dst] && !supporters[l.Src] {
+				supporters[l.Src] = true
+				changed = true
+			}
+		}
+	}
+	var out []string
+	for id := range supporters {
+		if n, ok := g.Nodes[id]; ok && n.Tag == ibis.TagAssumption && labels[id] == af.OUT {
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Text renders a View as human output.

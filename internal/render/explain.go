@@ -61,14 +61,19 @@ type IssueRef struct {
 	PositionText string `json:"position_text,omitempty"`
 }
 
-// AgendaView is the worklist that drives a discussion to closure: contested
-// (UNDEC) nodes that need argument or preference, issues whose labelling has
-// settled on a unique justified position and only await a decide, and issues
-// with no positions at all.
+// AgendaView is the worklist that drives a discussion to closure — and keeps
+// its openings honest: contested (UNDEC) nodes that need argument or
+// preference, issues whose labelling has settled on a unique justified
+// position and only await a decide, issues with no positions at all, positions
+// that are IN only because nobody ever attacked them (stress-test before
+// deciding), and assumptions nobody has examined. Nodes under a reframed
+// issue's dead framing are excluded throughout: the question has moved.
 type AgendaView struct {
 	Undecided   []NodeRef  `json:"undecided"`
 	Ready       []IssueRef `json:"ready"`
 	Unpopulated []IssueRef `json:"unpopulated"`
+	Untested    []IssueRef `json:"untested"`
+	Assumptions []NodeRef  `json:"assumptions"`
 }
 
 // Why builds the explanation for a node.
@@ -87,11 +92,20 @@ func Why(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, node strin
 }
 
 // Moves enumerates legal, useful next moves for an issue: decide when the
-// labelling has settled (so the loop has a terminal move), propose, plus the
-// flip suggestions for each of its positions.
+// labelling has settled (so the loop has a terminal move) — preceded by a
+// stress-test suggestion when the sole justified position was never attacked —
+// propose, the generative exits from a stalemate (synthesize / reframe), plus
+// the flip suggestions for each of its positions.
 func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue string, decs []ibis.Decision) MovesView {
 	mv := MovesView{Issue: issue}
+	st := Status(g, fw, labels, issue, decs)
 	if pos, ok := readyToDecide(g, labels, issue, decs); ok {
+		if len(attackersOf(fw, pos)) == 0 {
+			mv.Moves = append(mv.Moves, MoveSuggestion{
+				Move: "object", Args: []string{pos},
+				Effect: fmt.Sprintf("stress-test %s before deciding: it is IN by silence (never attacked), not by surviving attack", pos),
+			})
+		}
 		mv.Moves = append(mv.Moves, MoveSuggestion{
 			Move: "decide", Args: []string{issue, pos},
 			Effect: fmt.Sprintf("close the issue: %s is the unique justified position", pos),
@@ -100,6 +114,18 @@ func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue st
 	mv.Moves = append(mv.Moves, MoveSuggestion{
 		Move: "propose", Args: []string{issue}, Effect: "add another candidate position",
 	})
+	if st.Stalemate {
+		args := []string{issue}
+		for _, u := range st.Undecided {
+			args = append(args, "--from", u)
+		}
+		mv.Moves = append(mv.Moves,
+			MoveSuggestion{Move: "synthesize", Args: args,
+				Effect: "recombine the deadlocked rivals into a hybrid — note it joins the rivalry (stalemate becomes N+1-way) until the parents are conceded or a preference/audience elevates it"},
+			MoveSuggestion{Move: "reframe", Args: []string{issue},
+				Effect: "replace the framing if the deadlock signals a false dichotomy (positions do not carry over; lineage is recorded)"},
+		)
+	}
 	for _, p := range positionsFor(g, issue) {
 		mv.Moves = append(mv.Moves, toFlip(g, fw, labels, p)...)
 	}
@@ -107,31 +133,50 @@ func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue st
 }
 
 // Agenda returns the discussion's worklist: UNDEC nodes (sorted by id), issues
-// ready to decide, and issues with no positions yet.
-func Agenda(g *ibis.Graph, labels map[string]af.Label, decs []ibis.Decision) AgendaView {
+// ready to decide, issues with no positions yet, untested justified positions,
+// and unexamined assumptions. Everything under a reframed issue's dead framing
+// is excluded.
+func Agenda(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, decs []ibis.Decision) AgendaView {
 	var v AgendaView
+
+	// The dead framings and everything argued under them.
+	reframed := map[string]bool{}
+	deadScope := map[string]bool{}
+	for _, r := range g.Reframes {
+		reframed[r.Old] = true
+		for id := range reachableAF(g, r.Old) {
+			deadScope[id] = true
+		}
+	}
+
 	ids := make([]string, 0, len(labels))
 	for id := range labels {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
-		if labels[id] != af.UNDEC {
+		if labels[id] != af.UNDEC || deadScope[id] {
 			continue
 		}
 		n := g.Nodes[id]
 		v.Undecided = append(v.Undecided, NodeRef{ID: id, Kind: string(n.Kind), Text: n.Text, Label: "UNDEC"})
 	}
 
+	decided := map[string]bool{}
+	for _, d := range decs {
+		decided[d.Issue] = true
+	}
+
 	var issues []string
 	for id, n := range g.Nodes {
-		if n.Kind == ibis.Issue {
+		if n.Kind == ibis.Issue && !reframed[id] {
 			issues = append(issues, id)
 		}
 	}
 	sort.Strings(issues)
 	for _, issue := range issues {
-		if len(positionsFor(g, issue)) == 0 {
+		positions := positionsFor(g, issue)
+		if len(positions) == 0 {
 			v.Unpopulated = append(v.Unpopulated, IssueRef{Issue: issue, Text: g.Nodes[issue].Text})
 			continue
 		}
@@ -140,6 +185,38 @@ func Agenda(g *ibis.Graph, labels map[string]af.Label, decs []ibis.Decision) Age
 				Issue: issue, Text: g.Nodes[issue].Text,
 				Position: pos, PositionText: g.Nodes[pos].Text,
 			})
+		}
+		// Untested: IN by silence on a still-open issue — the winner nobody
+		// examined. (On a select_one issue with rivals, every position is
+		// attacked by the mutual-attack rule, so this fires for a sole
+		// position or open-cardinality positions — by design.)
+		if !decided[issue] {
+			for _, p := range positions {
+				if labels[p] == af.IN && len(attackersOf(fw, p)) == 0 {
+					v.Untested = append(v.Untested, IssueRef{
+						Issue: issue, Text: g.Nodes[issue].Text,
+						Position: p, PositionText: g.Nodes[p].Text,
+					})
+				}
+			}
+		}
+	}
+
+	// Assumptions nobody has examined: no support, no objection, not defeated.
+	for _, id := range ids {
+		n := g.Nodes[id]
+		if n.Tag != ibis.TagAssumption || labels[id] == af.OUT || deadScope[id] {
+			continue
+		}
+		examined := false
+		for _, l := range g.Links {
+			if l.Dst == id && (l.Rel == ibis.ObjectsTo || l.Rel == ibis.Supports) {
+				examined = true
+				break
+			}
+		}
+		if !examined {
+			v.Assumptions = append(v.Assumptions, NodeRef{ID: id, Kind: string(n.Kind), Text: n.Text, Label: string(labels[id])})
 		}
 	}
 	return v
@@ -248,7 +325,8 @@ func writeSuggestions(b *strings.Builder, ms []MoveSuggestion) {
 
 // AgendaText renders an AgendaView.
 func AgendaText(v AgendaView) string {
-	if len(v.Undecided) == 0 && len(v.Ready) == 0 && len(v.Unpopulated) == 0 {
+	if len(v.Undecided) == 0 && len(v.Ready) == 0 && len(v.Unpopulated) == 0 &&
+		len(v.Untested) == 0 && len(v.Assumptions) == 0 {
 		return cDim("agenda empty — nothing contested, nothing awaiting a decision") + "\n"
 	}
 	var b strings.Builder
@@ -269,6 +347,19 @@ func AgendaText(v AgendaView) string {
 		b.WriteString(cBold("no positions yet (propose one):") + "\n")
 		for _, r := range v.Unpopulated {
 			b.WriteString(para(fmt.Sprintf("  %s  ", cID(ibis.PrefixFor(ibis.Issue)+r.Issue)), quote(r.Text)) + "\n")
+		}
+	}
+	if len(v.Untested) > 0 {
+		b.WriteString(cBold("untested (IN by silence — stress-test before deciding):") + "\n")
+		for _, r := range v.Untested {
+			b.WriteString(para(fmt.Sprintf("  %s  ", pid(r.Position)), quote(r.PositionText)) + "\n")
+			fmt.Fprintf(&b, "      %s %s  %s\n", cDim("on"), cID(ibis.PrefixFor(ibis.Issue)+r.Issue), quote(r.Text))
+		}
+	}
+	if len(v.Assumptions) > 0 {
+		b.WriteString(cBold("unexamined assumptions (support or object):") + "\n")
+		for _, n := range v.Assumptions {
+			b.WriteString(para(fmt.Sprintf("  %s %s  ", labelInline(n.Label), nid(n.Kind, n.ID)), quote(n.Text)) + "\n")
 		}
 	}
 	return b.String()
@@ -376,13 +467,15 @@ func LogText(entries []store.HistoryEntry) string {
 }
 
 // AttackView is one edge of the materialized attack relation, tagged with where
-// it came from and whether a preference neutralized it.
+// it came from and whether a preference (or, under an audience lens, a value
+// ranking) neutralized it.
 type AttackView struct {
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Source  string `json:"source"`          // "objection" | "select_one"
-	Defeats bool   `json:"defeats"`         // false if a preference blocks the attack
-	Basis   string `json:"basis,omitempty"` // preference basis when blocked
+	From            string `json:"from"`
+	To              string `json:"to"`
+	Source          string `json:"source"`                     // "objection" | "select_one"
+	Defeats         bool   `json:"defeats"`                    // false if a preference or the audience blocks the attack
+	Basis           string `json:"basis,omitempty"`            // preference basis when blocked pairwise
+	AudienceBlocked string `json:"audience_blocked,omitempty"` // "value(target)≻value(attacker)" when the audience lens blocks it
 }
 
 // PrefView is one preference edge (asserted or derived by transitivity).
@@ -451,6 +544,9 @@ func Explain(g *ibis.Graph, fw *af.Framework, issue string, decs []ibis.Decision
 		}
 		if !av.Defeats {
 			av.Basis = basisOf(g, e.To, e.From)
+			if fw.AudienceBlocked != nil {
+				av.AudienceBlocked = fw.AudienceBlocked[[2]string{e.From, e.To}]
+			}
 		}
 		v.Attacks = append(v.Attacks, av)
 	}
@@ -498,7 +594,7 @@ func Explain(g *ibis.Graph, fw *af.Framework, issue string, decs []ibis.Decision
 	}
 	for _, d := range decs {
 		if d.Issue == issue {
-			v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes}
+			v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy}
 			v.DecisionIsIN = labels[d.Position] == af.IN
 		}
 	}
@@ -554,9 +650,13 @@ func ExplainText(v ExplainView, brief bool) string {
 	for _, a := range v.Attacks {
 		note := a.Source
 		if !a.Defeats {
-			note += ", neutralized by preference"
-			if a.Basis != "" {
-				note += " (basis=" + a.Basis + ")"
+			if a.AudienceBlocked != "" {
+				note += ", neutralized by audience (" + a.AudienceBlocked + ")"
+			} else {
+				note += ", neutralized by preference"
+				if a.Basis != "" {
+					note += " (basis=" + a.Basis + ")"
+				}
 			}
 		}
 		fmt.Fprintf(&b, "   %s ⚔ %s  (%s)\n", pre(a.From), pre(a.To), note)

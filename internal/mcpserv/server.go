@@ -11,8 +11,11 @@ package mcpserv
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -31,10 +34,17 @@ const instructions = `dlktk records design discussions as an IBIS argument graph
 positions currently stand (IN), are defeated (OUT), or are genuinely contested
 (UNDEC) via Dung grounded semantics. The loop: agenda (the worklist) -> moves
 (legal next moves for an issue) -> make a move (raise/propose/support/object/
-prefer/decide) -> re-read. Use why/show/explain to understand a label, search
-to check whether a claim already exists before adding a duplicate, and check to
-verify recorded decisions still stand. Decisions on decided issues must be
-overturned with supersede (basis required), never re-decided.`
+assume/prefer/decide) -> re-read. Use why/show/explain to understand a label,
+whatif/crux to explore counterfactuals without writing, worlds to see the
+coherent stances a contested issue admits, audiences to see which conclusions
+survive every declared value ranking, and search to check whether a claim
+already exists before adding a duplicate. An IN position with no attackers is
+untested, not vindicated — stress-test it before deciding. Stalemates have
+three exits: prefer (a value call), synthesize (a recorded hybrid), or reframe
+(replace a mis-framed question; basis required). Decisions on decided issues
+must be overturned with supersede (basis required), never re-decided; check
+verifies recorded decisions still stand and their review horizons have not
+passed.`
 
 type srv struct {
 	s             *store.Store
@@ -61,12 +71,17 @@ func NewServer(s *store.Store, defaultAuthor, defaultRole string) *mcp.Server {
 
 	// --- moves ---
 	mcp.AddTool(server, &mcp.Tool{Name: "new", Description: "create a discussion"}, x.newDisc)
-	mcp.AddTool(server, &mcp.Tool{Name: "raise", Description: "raise an issue (cardinality select_one|open is fixed at creation, default select_one)"}, x.raise)
+	mcp.AddTool(server, &mcp.Tool{Name: "raise", Description: "raise an issue (cardinality select_one|open is fixed at creation, default select_one); from records the position/argument that revealed it"}, x.raise)
+	mcp.AddTool(server, &mcp.Tool{Name: "reframe", Description: "replace an issue's framing with a fresh issue (basis required; positions do not carry over; lineage recorded)"}, x.reframe)
 	mcp.AddTool(server, &mcp.Tool{Name: "propose", Description: "propose a position on an issue"}, x.propose)
+	mcp.AddTool(server, &mcp.Tool{Name: "synthesize", Description: "propose a hybrid position recombining two or more existing positions (lineage recorded); it joins the rivalry until parents are conceded or a preference/audience elevates it"}, x.synthesize)
 	mcp.AddTool(server, &mcp.Tool{Name: "support", Description: "argue in support of a position or argument (rationale only; does not affect labels)"}, x.support)
 	mcp.AddTool(server, &mcp.Tool{Name: "object", Description: "object to a position or argument (an attack; feeds the labelling)"}, x.object)
+	mcp.AddTool(server, &mcp.Tool{Name: "assume", Description: "record an assumption the target rests on (a challengeable premise; inert in the labelling, tracked by agenda/check)"}, x.assume)
 	mcp.AddTool(server, &mcp.Tool{Name: "prefer", Description: "state a preference (winner over loser, with a basis); neutralizes the loser's attack on the winner"}, x.prefer)
-	mcp.AddTool(server, &mcp.Tool{Name: "decide", Description: "close an issue by accepting a position; rejected if the issue is already decided (use supersede)"}, x.decide)
+	mcp.AddTool(server, &mcp.Tool{Name: "promote", Description: "tag one of your own nodes with the value it promotes (audience lens input)"}, x.promote)
+	mcp.AddTool(server, &mcp.Tool{Name: "audience", Description: "declare a named strict value ranking (re-declaring requires supersede=true and a basis)"}, x.audience)
+	mcp.AddTool(server, &mcp.Tool{Name: "decide", Description: "close an issue by accepting a position; rejected if the issue is already decided (use supersede); review_by records a re-examination horizon"}, x.decide)
 	mcp.AddTool(server, &mcp.Tool{Name: "supersede", Description: "overturn the standing decision on an issue; basis is required and the prior decision is linked"}, x.supersede)
 	mcp.AddTool(server, &mcp.Tool{Name: "concede", Description: "withdraw one of your own nodes"}, x.concede)
 
@@ -80,7 +95,11 @@ func NewServer(s *store.Store, defaultAuthor, defaultRole string) *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{Name: "show", Description: "one node in full: text, author, label, every incident link"}, x.show)
 	mcp.AddTool(server, &mcp.Tool{Name: "search", Description: "find nodes whose text matches (check for an existing argument before duplicating it)"}, x.search)
 	mcp.AddTool(server, &mcp.Tool{Name: "explain", Description: "full derivation of an issue's labelling: attacks, preferences, fixpoint rounds, outcome"}, x.explain)
-	mcp.AddTool(server, &mcp.Tool{Name: "check", Description: "verify standing decisions: drift, stalemates, store invariants"}, x.checkTool)
+	mcp.AddTool(server, &mcp.Tool{Name: "whatif", Description: "counterfactual: apply hypothetical moves (object/prefer/without) in memory and report the label diff — nothing is written"}, x.whatif)
+	mcp.AddTool(server, &mcp.Tool{Name: "crux", Description: "the load-bearing arguments: which single argument's removal flips a position of the issue"}, x.crux)
+	mcp.AddTool(server, &mcp.Tool{Name: "worlds", Description: "enumerate the coherent maximal stances (preferred extensions) on an issue; positions sorted robust/contingent/hopeless"}, x.worlds)
+	mcp.AddTool(server, &mcp.Tool{Name: "audiences", Description: "cross-audience sensitivity report: which positions are justified under every declared value ranking vs audience-sensitive"}, x.audiences)
+	mcp.AddTool(server, &mcp.Tool{Name: "check", Description: "verify standing decisions: drift, stalemates, untested/review-due decisions, store invariants"}, x.checkTool)
 
 	return server
 }
@@ -156,6 +175,7 @@ type raiseArgs struct {
 	Discussion  string `json:"discussion" jsonschema:"discussion id"`
 	Text        string `json:"text" jsonschema:"the question at stake"`
 	Parent      string `json:"parent,omitempty" jsonschema:"parent issue id"`
+	From        string `json:"from,omitempty" jsonschema:"position or argument that revealed this question (mutually exclusive with parent)"`
 	Cardinality string `json:"cardinality,omitempty" jsonschema:"select_one (default) or open; fixed at creation"`
 	Author      string `json:"author,omitempty"`
 	Role        string `json:"role,omitempty"`
@@ -169,7 +189,32 @@ func (x *srv) raise(ctx context.Context, req *mcp.CallToolRequest, a raiseArgs) 
 	default:
 		return bad(&ibis.IllegalMove{Detail: "cardinality must be select_one or open, got " + a.Cardinality})
 	}
-	nid, err := x.mover(a.Author, a.Role).Raise(a.Discussion, a.Text, a.Parent, ibis.Cardinality(a.Cardinality))
+	nid, err := x.mover(a.Author, a.Role).Raise(a.Discussion, a.Text, a.Parent, a.From, ibis.Cardinality(a.Cardinality))
+	if err != nil {
+		return bad(err)
+	}
+	return ok(map[string]string{"id": nid})
+}
+
+type reframeArgs struct {
+	Discussion  string `json:"discussion" jsonschema:"discussion id"`
+	Issue       string `json:"issue" jsonschema:"the issue whose framing is replaced"`
+	Text        string `json:"text" jsonschema:"the new framing of the question"`
+	Basis       string `json:"basis" jsonschema:"why the framing is replaced (required)"`
+	Cardinality string `json:"cardinality,omitempty" jsonschema:"select_one (default) or open for the new issue"`
+	Author      string `json:"author,omitempty"`
+	Role        string `json:"role,omitempty"`
+}
+
+func (x *srv) reframe(ctx context.Context, req *mcp.CallToolRequest, a reframeArgs) (*mcp.CallToolResult, any, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	switch a.Cardinality {
+	case "", string(ibis.SelectOne), string(ibis.Open):
+	default:
+		return bad(&ibis.IllegalMove{Detail: "cardinality must be select_one or open, got " + a.Cardinality})
+	}
+	nid, err := x.mover(a.Author, a.Role).Reframe(a.Discussion, a.Issue, a.Text, a.Basis, ibis.Cardinality(a.Cardinality))
 	if err != nil {
 		return bad(err)
 	}
@@ -180,6 +225,7 @@ type proposeArgs struct {
 	Discussion string `json:"discussion" jsonschema:"discussion id"`
 	Issue      string `json:"issue" jsonschema:"issue id"`
 	Text       string `json:"text" jsonschema:"the candidate answer"`
+	Promotes   string `json:"promotes,omitempty" jsonschema:"the value this position promotes (audience lens input)"`
 	Author     string `json:"author,omitempty"`
 	Role       string `json:"role,omitempty"`
 }
@@ -187,7 +233,27 @@ type proposeArgs struct {
 func (x *srv) propose(ctx context.Context, req *mcp.CallToolRequest, a proposeArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	nid, err := x.mover(a.Author, a.Role).Propose(a.Discussion, a.Issue, a.Text)
+	nid, err := x.mover(a.Author, a.Role).Propose(a.Discussion, a.Issue, a.Text, a.Promotes)
+	if err != nil {
+		return bad(err)
+	}
+	return ok(map[string]string{"id": nid})
+}
+
+type synthesizeArgs struct {
+	Discussion string   `json:"discussion" jsonschema:"discussion id"`
+	Issue      string   `json:"issue" jsonschema:"issue id"`
+	Text       string   `json:"text" jsonschema:"the hybrid position"`
+	From       []string `json:"from" jsonschema:"two or more parent position ids on the same issue"`
+	Promotes   string   `json:"promotes,omitempty" jsonschema:"the value the hybrid promotes"`
+	Author     string   `json:"author,omitempty"`
+	Role       string   `json:"role,omitempty"`
+}
+
+func (x *srv) synthesize(ctx context.Context, req *mcp.CallToolRequest, a synthesizeArgs) (*mcp.CallToolResult, any, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	nid, err := x.mover(a.Author, a.Role).Synthesize(a.Discussion, a.Issue, a.Text, a.From, a.Promotes)
 	if err != nil {
 		return bad(err)
 	}
@@ -198,6 +264,7 @@ type attachArgs struct {
 	Discussion string `json:"discussion" jsonschema:"discussion id"`
 	Target     string `json:"target" jsonschema:"position or argument id"`
 	Text       string `json:"text" jsonschema:"the claim"`
+	Promotes   string `json:"promotes,omitempty" jsonschema:"the value this argument promotes (audience lens input)"`
 	Author     string `json:"author,omitempty"`
 	Role       string `json:"role,omitempty"`
 }
@@ -205,7 +272,7 @@ type attachArgs struct {
 func (x *srv) support(ctx context.Context, req *mcp.CallToolRequest, a attachArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	nid, err := x.mover(a.Author, a.Role).Support(a.Discussion, a.Target, a.Text)
+	nid, err := x.mover(a.Author, a.Role).Support(a.Discussion, a.Target, a.Text, a.Promotes)
 	if err != nil {
 		return bad(err)
 	}
@@ -215,11 +282,57 @@ func (x *srv) support(ctx context.Context, req *mcp.CallToolRequest, a attachArg
 func (x *srv) object(ctx context.Context, req *mcp.CallToolRequest, a attachArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	nid, err := x.mover(a.Author, a.Role).Object(a.Discussion, a.Target, a.Text)
+	nid, err := x.mover(a.Author, a.Role).Object(a.Discussion, a.Target, a.Text, a.Promotes)
 	if err != nil {
 		return bad(err)
 	}
 	return ok(map[string]string{"id": nid})
+}
+
+func (x *srv) assume(ctx context.Context, req *mcp.CallToolRequest, a attachArgs) (*mcp.CallToolResult, any, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	nid, err := x.mover(a.Author, a.Role).Assume(a.Discussion, a.Target, a.Text)
+	if err != nil {
+		return bad(err)
+	}
+	return ok(map[string]string{"id": nid})
+}
+
+type promoteArgs struct {
+	Discussion string `json:"discussion" jsonschema:"discussion id"`
+	Node       string `json:"node" jsonschema:"id of one of your own positions/arguments"`
+	Value      string `json:"value" jsonschema:"the value it promotes (throughput, security, …)"`
+	Author     string `json:"author,omitempty"`
+	Role       string `json:"role,omitempty"`
+}
+
+func (x *srv) promote(ctx context.Context, req *mcp.CallToolRequest, a promoteArgs) (*mcp.CallToolResult, any, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.mover(a.Author, a.Role).Promote(a.Discussion, a.Node, a.Value); err != nil {
+		return bad(err)
+	}
+	return ok(map[string]string{"node": a.Node, "value": a.Value})
+}
+
+type audienceArgs struct {
+	Discussion string   `json:"discussion" jsonschema:"discussion id"`
+	Name       string   `json:"name" jsonschema:"audience name (ops, product, …)"`
+	Ranking    []string `json:"ranking" jsonschema:"values, most important first (strict order, at least two)"`
+	Supersede  bool     `json:"supersede,omitempty" jsonschema:"replace an existing declaration of this name (requires basis)"`
+	Basis      string   `json:"basis,omitempty" jsonschema:"why the prior ranking is retired (required with supersede)"`
+	Author     string   `json:"author,omitempty"`
+	Role       string   `json:"role,omitempty"`
+}
+
+func (x *srv) audience(ctx context.Context, req *mcp.CallToolRequest, a audienceArgs) (*mcp.CallToolResult, any, error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if err := x.mover(a.Author, a.Role).DeclareAudience(a.Discussion, a.Name, a.Ranking, a.Supersede, a.Basis); err != nil {
+		return bad(err)
+	}
+	return ok(map[string]any{"name": a.Name, "ranking": a.Ranking})
 }
 
 type preferArgs struct {
@@ -246,6 +359,7 @@ type decideArgs struct {
 	Issue      string `json:"issue" jsonschema:"issue id"`
 	Position   string `json:"position" jsonschema:"accepted position id"`
 	Basis      string `json:"basis,omitempty" jsonschema:"why"`
+	ReviewBy   int64  `json:"review_by,omitempty" jsonschema:"unix seconds; re-examination horizon check will enforce"`
 	Author     string `json:"author,omitempty"`
 	Role       string `json:"role,omitempty"`
 }
@@ -253,7 +367,7 @@ type decideArgs struct {
 func (x *srv) decide(ctx context.Context, req *mcp.CallToolRequest, a decideArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if err := x.mover(a.Author, a.Role).Decide(a.Discussion, a.Issue, a.Position, a.Basis); err != nil {
+	if err := x.mover(a.Author, a.Role).Decide(a.Discussion, a.Issue, a.Position, a.Basis, a.ReviewBy); err != nil {
 		return bad(err)
 	}
 	return ok(map[string]string{"issue": a.Issue, "position": a.Position})
@@ -264,6 +378,7 @@ type supersedeArgs struct {
 	Issue      string `json:"issue" jsonschema:"issue id"`
 	Position   string `json:"position" jsonschema:"newly accepted position id"`
 	Basis      string `json:"basis" jsonschema:"why the prior decision is overturned (required)"`
+	ReviewBy   int64  `json:"review_by,omitempty" jsonschema:"unix seconds; re-examination horizon check will enforce"`
 	Author     string `json:"author,omitempty"`
 	Role       string `json:"role,omitempty"`
 }
@@ -271,7 +386,7 @@ type supersedeArgs struct {
 func (x *srv) supersede(ctx context.Context, req *mcp.CallToolRequest, a supersedeArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if err := x.mover(a.Author, a.Role).Supersede(a.Discussion, a.Issue, a.Position, a.Basis); err != nil {
+	if err := x.mover(a.Author, a.Role).Supersede(a.Discussion, a.Issue, a.Position, a.Basis, a.ReviewBy); err != nil {
 		return bad(err)
 	}
 	return ok(map[string]string{"issue": a.Issue, "position": a.Position})
@@ -316,6 +431,7 @@ func (x *srv) roster(ctx context.Context, req *mcp.CallToolRequest, a discArgs) 
 type statusArgs struct {
 	Discussion string `json:"discussion" jsonschema:"discussion id"`
 	Issue      string `json:"issue,omitempty" jsonschema:"issue id (all issues if omitted)"`
+	Under      string `json:"under,omitempty" jsonschema:"audience name: evaluate under that value ranking"`
 }
 
 func (x *srv) status(ctx context.Context, req *mcp.CallToolRequest, a statusArgs) (*mcp.CallToolResult, any, error) {
@@ -323,18 +439,46 @@ func (x *srv) status(ctx context.Context, req *mcp.CallToolRequest, a statusArgs
 	if err != nil {
 		return bad(err)
 	}
-	issues := g.Issues()
+	if a.Under != "" {
+		fw, labels, err = underAudience(g, a.Under)
+		if err != nil {
+			return bad(err)
+		}
+	}
+	var issues []string
 	if a.Issue != "" {
 		if n, found := g.Nodes[a.Issue]; !found || n.Kind != ibis.Issue {
 			return bad(fail.NotFound(a.Issue, "issue %q not found", a.Issue))
 		}
 		issues = []string{a.Issue}
+	} else {
+		// The all-issues sweep skips reframed (dead) framings.
+		for _, iss := range g.Issues() {
+			if _, reframed := g.ReframedTo(iss); !reframed {
+				issues = append(issues, iss)
+			}
+		}
 	}
 	var views []render.IssueStatus
 	for _, iss := range issues {
-		views = append(views, render.Status(g, fw, labels, iss, decs))
+		st := render.Status(g, fw, labels, iss, decs)
+		st.Under = a.Under
+		views = append(views, st)
 	}
 	return ok(map[string]any{"issues": views})
+}
+
+// underAudience rebuilds the framework and labelling under a named audience.
+func underAudience(g *ibis.Graph, name string) (*af.Framework, map[string]af.Label, error) {
+	aud, found := g.Audiences[name]
+	if !found {
+		return nil, nil, fail.NotFound(name, "audience %q not declared", name)
+	}
+	fw, err := af.BuildUnder(g, aud)
+	if err != nil {
+		return nil, nil, err
+	}
+	return fw, fw.Grounded(), nil
 }
 
 type discArgs struct {
@@ -342,11 +486,113 @@ type discArgs struct {
 }
 
 func (x *srv) agenda(ctx context.Context, req *mcp.CallToolRequest, a discArgs) (*mcp.CallToolResult, any, error) {
-	g, _, labels, decs, err := x.framework(a.Discussion)
+	g, fw, labels, decs, err := x.framework(a.Discussion)
 	if err != nil {
 		return bad(err)
 	}
-	return ok(render.Agenda(g, labels, decs))
+	return ok(render.Agenda(g, fw, labels, decs))
+}
+
+type whatifArgs struct {
+	Discussion string   `json:"discussion" jsonschema:"discussion id"`
+	Issue      string   `json:"issue" jsonschema:"issue id"`
+	Object     []string `json:"object,omitempty" jsonschema:"targets to hypothetically object to (each gets an undefeated synthetic attacker)"`
+	Prefer     []string `json:"prefer,omitempty" jsonschema:"hypothetical preferences as winner:loser pairs"`
+	Without    []string `json:"without,omitempty" jsonschema:"nodes to hypothetically remove (simulated concede)"`
+}
+
+func (x *srv) whatif(ctx context.Context, req *mcp.CallToolRequest, a whatifArgs) (*mcp.CallToolResult, any, error) {
+	g, _, labels, _, err := x.framework(a.Discussion)
+	if err != nil {
+		return bad(err)
+	}
+	if n, found := g.Nodes[a.Issue]; !found || n.Kind != ibis.Issue {
+		return bad(fail.NotFound(a.Issue, "issue %q not found", a.Issue))
+	}
+	hyps, err := parseHyps(a.Object, a.Prefer, a.Without)
+	if err != nil {
+		return bad(err)
+	}
+	v, err := render.WhatIf(g, labels, a.Issue, hyps)
+	if err != nil {
+		return bad(err)
+	}
+	return ok(v)
+}
+
+// parseHyps assembles hypotheticals from the flag-shaped inputs the CLI and
+// MCP share ("winner:loser" preference pairs).
+func parseHyps(objects, prefers, withouts []string) ([]render.Hypothetical, error) {
+	var hyps []render.Hypothetical
+	for _, t := range objects {
+		hyps = append(hyps, render.HypObject(t))
+	}
+	for _, p := range prefers {
+		w, l, found := strings.Cut(p, ":")
+		if !found || w == "" || l == "" {
+			return nil, &ibis.IllegalMove{Detail: fmt.Sprintf("whatif prefer %q must be winner:loser", p)}
+		}
+		hyps = append(hyps, render.HypPrefer(w, l))
+	}
+	for _, n := range withouts {
+		hyps = append(hyps, render.HypWithout(n))
+	}
+	if len(hyps) == 0 {
+		return nil, &ibis.IllegalMove{Detail: "whatif needs at least one hypothetical (object / prefer / without)"}
+	}
+	return hyps, nil
+}
+
+func (x *srv) crux(ctx context.Context, req *mcp.CallToolRequest, a issueArgs) (*mcp.CallToolResult, any, error) {
+	g, _, labels, _, err := x.framework(a.Discussion)
+	if err != nil {
+		return bad(err)
+	}
+	if n, found := g.Nodes[a.Issue]; !found || n.Kind != ibis.Issue {
+		return bad(fail.NotFound(a.Issue, "issue %q not found", a.Issue))
+	}
+	v, err := render.Crux(g, labels, a.Issue)
+	if err != nil {
+		return bad(err)
+	}
+	return ok(v)
+}
+
+type worldsArgs struct {
+	Discussion string `json:"discussion" jsonschema:"discussion id"`
+	Issue      string `json:"issue" jsonschema:"issue id"`
+	Under      string `json:"under,omitempty" jsonschema:"audience name: enumerate under that value ranking"`
+}
+
+func (x *srv) worlds(ctx context.Context, req *mcp.CallToolRequest, a worldsArgs) (*mcp.CallToolResult, any, error) {
+	g, fw, _, _, err := x.framework(a.Discussion)
+	if err != nil {
+		return bad(err)
+	}
+	if n, found := g.Nodes[a.Issue]; !found || n.Kind != ibis.Issue {
+		return bad(fail.NotFound(a.Issue, "issue %q not found", a.Issue))
+	}
+	if a.Under != "" {
+		fw, _, err = underAudience(g, a.Under)
+		if err != nil {
+			return bad(err)
+		}
+	}
+	v := render.Worlds(g, fw, a.Issue)
+	v.Under = a.Under
+	return ok(v)
+}
+
+func (x *srv) audiences(ctx context.Context, req *mcp.CallToolRequest, a discArgs) (*mcp.CallToolResult, any, error) {
+	g, err := x.s.Graph(a.Discussion, store.Now())
+	if err != nil {
+		return bad(err)
+	}
+	v, err := render.Audiences(g)
+	if err != nil {
+		return bad(err)
+	}
+	return ok(v)
 }
 
 type issueArgs struct {
@@ -452,7 +698,7 @@ func (x *srv) checkTool(ctx context.Context, req *mcp.CallToolRequest, a checkAr
 			discs = append(discs, d.ID)
 		}
 	}
-	v, err := check.Run(x.s, discs, store.Now())
+	v, err := check.Run(x.s, discs, store.Now(), time.Now().Unix())
 	if err != nil {
 		return bad(err)
 	}

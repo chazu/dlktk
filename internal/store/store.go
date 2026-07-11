@@ -24,6 +24,9 @@ const (
 	relPreference = "dlktk/preference"
 	relDecision   = "dlktk/decision"
 	relRoster     = "dlktk/roster"
+	relReframe    = "dlktk/reframe"
+	relValue      = "dlktk/value"
+	relAudience   = "dlktk/audience"
 )
 
 // factOps is the slice of pudl's API that store operations run against. Both
@@ -139,6 +142,37 @@ func (s *Store) SetIssueCard(c ibis.IssueCard) error {
 // on every move costs one row per distinct (disc, author, role) (design §16 Q8).
 func (s *Store) AddRoster(r ibis.Roster) error { return s.add(relRoster, r, r.Author) }
 
+// AddReframe records that an issue's framing was replaced.
+func (s *Store) AddReframe(r ibis.Reframe) error { return s.add(relReframe, r, r.Author) }
+
+// AddValue records the value a node promotes.
+func (s *Store) AddValue(v ibis.ValueTag) error { return s.add(relValue, v, v.Author) }
+
+// AddAudience records a named value ranking.
+func (s *Store) AddAudience(a ibis.Audience) error { return s.add(relAudience, a, a.Author) }
+
+// SupersedeAudience invalidates (closes the vt interval of) the current
+// audience fact(s) with the given name, so a fresh declaration supersedes it —
+// the SupersedeDecision pattern. No-op if none stands.
+func (s *Store) SupersedeAudience(disc, name string) error {
+	facts, err := s.ops.QueryFacts(factstore.FactFilter{Relation: relAudience})
+	if err != nil {
+		return fail.Store("query audiences: %v", err)
+	}
+	for _, f := range facts {
+		var a ibis.Audience
+		if err := json.Unmarshal([]byte(f.Args), &a); err != nil {
+			continue
+		}
+		if a.Disc == disc && a.Name == name {
+			if err := s.ops.InvalidateFact(f.ID); err != nil {
+				return fail.Store("invalidate prior audience %s: %v", name, err)
+			}
+		}
+	}
+	return nil
+}
+
 // --- reads (filtered by discussion in Go; graphs are tiny) ---
 
 func (s *Store) Discussions(w When) ([]ibis.Discussion, error) {
@@ -163,6 +197,25 @@ func (s *Store) Preferences(disc string, w When) ([]ibis.Preference, error) {
 func (s *Store) Decisions(disc string, w When) ([]ibis.Decision, error) {
 	all, err := scan[ibis.Decision](s, relDecision, w)
 	return filter(all, disc, func(d ibis.Decision) string { return d.Disc }), err
+}
+
+// Reframes returns a discussion's framing supersessions.
+func (s *Store) Reframes(disc string, w When) ([]ibis.Reframe, error) {
+	all, err := scan[ibis.Reframe](s, relReframe, w)
+	return filter(all, disc, func(r ibis.Reframe) string { return r.Disc }), err
+}
+
+// Values returns a discussion's node→value tags.
+func (s *Store) Values(disc string, w When) ([]ibis.ValueTag, error) {
+	all, err := scan[ibis.ValueTag](s, relValue, w)
+	return filter(all, disc, func(v ibis.ValueTag) string { return v.Disc }), err
+}
+
+// Audiences returns a discussion's currently declared value rankings
+// (superseded ones are vt-closed and excluded by the default viewpoint).
+func (s *Store) Audiences(disc string, w When) ([]ibis.Audience, error) {
+	all, err := scan[ibis.Audience](s, relAudience, w)
+	return filter(all, disc, func(a ibis.Audience) string { return a.Disc }), err
 }
 
 // Rosters returns the author↔role bindings recorded for a discussion, in
@@ -209,7 +262,21 @@ func (s *Store) Graph(disc string, w When) (*ibis.Graph, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ibis.NewGraph(nodes, links, prefs, cards), nil
+	reframes, err := s.Reframes(disc, gw)
+	if err != nil {
+		return nil, err
+	}
+	values, err := s.Values(disc, gw)
+	if err != nil {
+		return nil, err
+	}
+	// Audiences ride the full viewpoint: supersession closes the vt interval,
+	// so --valid-at answers "which rankings governed at T".
+	audiences, err := s.Audiences(disc, w)
+	if err != nil {
+		return nil, err
+	}
+	return ibis.NewGraph(nodes, links, prefs, cards, reframes, values, audiences), nil
 }
 
 // SupersedeDecision invalidates (closes the vt interval of) any current decision
@@ -336,6 +403,15 @@ func (s *Store) Export(disc string) ([]ExportRecord, error) {
 	if err := emit(relRoster, discIs); err != nil {
 		return nil, err
 	}
+	if err := emit(relReframe, discIs); err != nil {
+		return nil, err
+	}
+	if err := emit(relValue, discIs); err != nil {
+		return nil, err
+	}
+	if err := emit(relAudience, discIs); err != nil {
+		return nil, err
+	}
 	if err := emit(relIssueCard, func(m map[string]any) bool { i, _ := m["issue"].(string); return issueIDs[i] }); err != nil {
 		return nil, err
 	}
@@ -412,7 +488,7 @@ func (s *Store) ExportHistory(disc string) ([]ExportRecord, error) {
 	if err := collect(relNode, discIs); err != nil { // populates issueIDs
 		return nil, err
 	}
-	for _, rel := range []string{relLink, relPreference, relDecision, relRoster} {
+	for _, rel := range []string{relLink, relPreference, relDecision, relRoster, relReframe, relValue, relAudience} {
 		if err := collect(rel, discIs); err != nil {
 			return nil, err
 		}
@@ -583,13 +659,18 @@ func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Pr
 		if v.Kind != ibis.Issue && v.Kind != ibis.Position && v.Kind != ibis.Argument {
 			return bad("node kind %q invalid", v.Kind)
 		}
+		if v.Tag != "" && v.Tag != ibis.TagAssumption {
+			return bad("node tag %q invalid (only %q)", v.Tag, ibis.TagAssumption)
+		}
 		return firstErr(require("id", v.ID), require("disc", v.Disc))
 	case relLink:
 		var v ibis.Link
 		if err := parse(&v); err != nil {
 			return err
 		}
-		if v.Rel != ibis.RespondsTo && v.Rel != ibis.Supports && v.Rel != ibis.ObjectsTo {
+		switch v.Rel {
+		case ibis.RespondsTo, ibis.Supports, ibis.ObjectsTo, ibis.Synthesizes, ibis.RaisedFrom:
+		default:
 			return bad("link rel %q invalid", v.Rel)
 		}
 		return firstErr(require("id", v.ID), require("disc", v.Disc), require("src", v.Src), require("dst", v.Dst))
@@ -624,6 +705,27 @@ func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Pr
 			return err
 		}
 		return firstErr(require("disc", v.Disc), require("author", v.Author), require("role", v.Role))
+	case relReframe:
+		var v ibis.Reframe
+		if err := parse(&v); err != nil {
+			return err
+		}
+		return firstErr(require("disc", v.Disc), require("old", v.Old), require("new", v.New), require("basis", v.Basis))
+	case relValue:
+		var v ibis.ValueTag
+		if err := parse(&v); err != nil {
+			return err
+		}
+		return firstErr(require("disc", v.Disc), require("node", v.Node), require("value", v.Value))
+	case relAudience:
+		var v ibis.Audience
+		if err := parse(&v); err != nil {
+			return err
+		}
+		if len(v.Ranking) < 2 {
+			return bad("audience %q ranking must list at least two values", v.Name)
+		}
+		return firstErr(require("disc", v.Disc), require("name", v.Name))
 	default:
 		return bad("unknown relation %q", rec.Relation)
 	}
@@ -631,7 +733,8 @@ func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Pr
 
 func knownRelation(rel string) bool {
 	switch rel {
-	case relDiscussion, relNode, relLink, relIssueCard, relPreference, relDecision, relRoster:
+	case relDiscussion, relNode, relLink, relIssueCard, relPreference, relDecision, relRoster,
+		relReframe, relValue, relAudience:
 		return true
 	}
 	return false
@@ -662,7 +765,7 @@ type HistoryEntry struct {
 // order. If nodeID is non-empty, only facts carrying that args.id are returned.
 func (s *Store) History(disc, nodeID string) ([]HistoryEntry, error) {
 	var out []HistoryEntry
-	for _, rel := range []string{relNode, relLink, relPreference, relDecision} {
+	for _, rel := range []string{relNode, relLink, relPreference, relDecision, relReframe, relValue, relAudience} {
 		facts, err := s.ops.FactHistory(rel)
 		if err != nil {
 			return nil, fail.Store("history %s: %v", rel, err)
@@ -706,6 +809,12 @@ func summarize(rel string, m map[string]any) string {
 		return fmt.Sprintf("prefer %s>%s basis=%s", str("winner"), str("loser"), str("basis"))
 	case relDecision:
 		return fmt.Sprintf("decide %s→%s", str("issue"), str("position"))
+	case relReframe:
+		return fmt.Sprintf("reframe %s→%s basis=%s", str("old"), str("new"), str("basis"))
+	case relValue:
+		return fmt.Sprintf("promote %s value=%s", str("node"), str("value"))
+	case relAudience:
+		return fmt.Sprintf("audience %s", str("name"))
 	}
 	return rel
 }

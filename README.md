@@ -30,7 +30,17 @@ dlktk prefer $B $A --basis throughput
 dlktk status $I                 # RWLock justified
 ```
 
-Agent commands: `discover` (CUE/JSON capability schema), `agenda` (live UNDEC set), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it), `explain <issue>` (full derivation: how attacks/defeats were built and the round-by-round grounded fixpoint that produced the labelling). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store, `5` check-failed).
+Agent commands: `discover` (CUE/JSON capability schema), `agenda` (the worklist: UNDEC set, ready-to-decide, untested winners, unexamined assumptions), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it), `explain <issue>` (full derivation: how attacks/defeats were built and the round-by-round grounded fixpoint that produced the labelling). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store, `5` check-failed).
+
+Wicked-problem support (divergence, exploration, plural values — see [`wicked-problems.md`](wicked-problems.md) for the rationale):
+
+- **Epistemic honesty** — an IN position with no attackers is marked *untested* (IN by silence, not by surviving attack); `agenda` lists them, `moves` suggests stress-testing before `decide`, and `check --strict` flags never-attacked decisions.
+- **Generative stalemate exits** — `synthesize <issue> "<text>" --from <p1> --from <p2>` (a hybrid with recorded lineage) and `reframe <issue> "<text>" --basis <label>` (replace a mis-framed question; the dead framing leaves the agenda, lineage recorded). `raise --from <node>` spawns a deeper question from the argument that revealed it.
+- **Counterfactual exploration** — `whatif <issue> --object <t> / --prefer <w>:<l> / --without <n>` applies hypothetical moves in memory and shows the label diff (nothing written); `crux <issue>` finds the load-bearing arguments the verdict rests on.
+- **`worlds <issue>`** — enumerates the coherent maximal stances (preferred extensions) a contested issue admits; positions sorted robust / contingent / hopeless. Grounded semantics stay the referee; worlds is the exploration lens.
+- **Values and audiences** — `--promotes <value>` on moves (or `promote <node> <value>`), `audience <name> <v1> <v2>…` records a stakeholder's strict value ranking; `status --under <name>` evaluates through that lens (value-based AF) and `audiences` reports which positions survive *every* declared ranking vs which hinge on whose values govern.
+- **Assumptions** — `assume <target> "<text>"` records a challengeable premise; `agenda` lists unexamined ones and `check --strict` flags decisions resting on a defeated assumption.
+- **Review horizons** — `decide/supersede --review-by <T>` records that a decision is provisional; `check` reports it once the horizon passes.
 
 Output adapts to its consumer: text on a terminal, JSON when piped (override with `--format`). Text output is colorized by grounded label and word-wrapped to the terminal (`--color auto|always|never`, honors `NO_COLOR`); `why` and `moves` print their suggestions as runnable `dlktk …` command lines, and read errors add a one-line `hint:`.
 
@@ -48,7 +58,7 @@ MCP: `dlktk mcp` serves the same verb set over the Model Context Protocol (stdio
 {"mcpServers": {"dlktk": {"command": "dlktk", "args": ["mcp", "--store", "/path/to/repo/.pudl"]}}}
 ```
 
-CI: `check [--all] [--strict]` verifies that recorded decisions still stand — exit 5 when a decided position is no longer justified (the dialectic moved out from under it), when stored preferences are cyclic, or when store invariants are violated; `--strict` also fails on lingering stalemates. Run it in CI so decisions stay living constraints — this repo's own workflow drift-checks the `examples/` dialectics on every PR.
+CI: `check [--all] [--strict]` verifies that recorded decisions still stand — exit 5 when a decided position is no longer justified (the dialectic moved out from under it), when stored preferences are cyclic, or when store invariants are violated; `--strict` also fails on the warnings: lingering stalemates, never-attacked decisions (`untested_decision`), expired review horizons (`review_due`), and decisions resting on defeated assumptions (`defeated_assumption`). Run it in CI so decisions stay living constraints — this repo's own workflow drift-checks the `examples/` dialectics on every PR.
 
 ## Build
 

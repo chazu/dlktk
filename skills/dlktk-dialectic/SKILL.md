@@ -70,25 +70,53 @@ Suggested personas: **Maintainer** (objects on long-term cost, prefers on
 `maintainability`), **Shipper** (proposes, prefers on `velocity`), **Security**
 (objects on threat, prefers on `security`), **Historian** (queries prior
 decisions with `log`/`replay`/`anchored`/`search --all` and raises an issue when
-a new position contradicts a standing one).
+a new position contradicts a standing one). For open-ended questions add the
+generative personas: **Reframer** (challenges framings with `reframe` and
+`raise --from`), **Analogist** (mines prior discussions for candidate
+positions, cited by value), **First-Principles** (states premises with
+`assume`, then attacks them), and per-value **stakeholder advocates** (each
+declares an `audience` ranking and tags moves with `--promotes`).
 
 ## The loop
 
-1. **`agenda`** — the worklist, in three sections:
+1. **`agenda`** — the worklist, in five sections:
    - `undecided` (UNDEC): contested — needs an argument or a preference.
    - `ready`: settled on one justified position — `decide` it (or surface to a
      human if deciding isn't your call).
    - `unpopulated`: issues with no positions — `propose` one.
+   - `untested`: positions IN only because nobody attacked them. **IN by
+     silence is unexamined, not vindicated** — stress-test before deciding.
+   - `assumptions`: premises (`assume`) nobody has examined — support or
+     object; the biggest reframes start here.
 2. **`moves <issue>`** — the legal, useful next moves, each with its effect. In
    text mode these print as runnable `dlktk …` command lines; over JSON they
    arrive as `{move, args, effect}`. Pick one; don't invent moves outside it.
-3. **Act** — `raise` / `propose` / `support` / `object` / `prefer` / `decide`.
+3. **Act** — `raise` / `reframe` / `propose` / `synthesize` / `support` /
+   `object` / `assume` / `prefer` / `promote` / `audience` / `decide`.
 4. **Re-read** — labels may have flipped *anywhere* (reinstatement). Repeat
    until the agenda is empty or your budget is spent.
 
 To understand a label before contesting it: `why <node>` (its attackers + the
 moves that flip it), `show <node>` (the node in full), `explain <issue>` (the
 whole derivation, round by round).
+
+To explore before committing (all read-only, nothing written): `whatif <issue>
+--object <t> / --prefer <w>:<l> / --without <n>` (label diff of hypothetical
+moves), `crux <issue>` (the load-bearing arguments — attack the crux or shore
+it up), `worlds <issue>` (the coherent stances a contested issue admits, with
+positions sorted robust/contingent/hopeless), `audiences` (which positions
+survive every declared value ranking).
+
+## Diverge before you converge (for open-ended / wicked questions)
+
+- **No `prefer` until the issue has ≥ 2 positions from ≥ 2 authors.**
+- **Each persona makes at least one generative move** (propose / synthesize /
+  reframe / assume / raise --from) before stating any preference.
+- **Rotate a devil's advocate** against the strongest untested IN position
+  (the agenda's `untested` section points at it).
+- **Every wicked problem is a symptom of another problem**: when an argument
+  reveals a deeper question, `raise "<question>" --from <that node>` so the
+  provenance is recorded and the sub-issue nests under it in `tree`.
 
 ## Move discipline (the rules that keep a debate honest)
 
@@ -99,14 +127,27 @@ whole derivation, round by round).
 - **To change the verdict, `object` — never `support`.** `supports` is recorded
   rationale the evaluator ignores. Defend a position by defeating its attacker
   (object to the objection); reinstatement does the rest.
-- **Stalemates need a preference, not more arguments.** When `status` reports a
-  stalemate, every position is UNDEC and symmetric; a new argument helps only if
-  it attacks from *outside* the cycle. State `prefer <winner> <loser> --basis
-  <label>` with an honest basis.
-- **Decisions are closing acts.** `decide <issue> <position>` is rejected on an
-  already-decided issue; overturning goes through `supersede <issue> <position>
-  --basis <label>`, which records *why* and links the prior decision. Deciding
-  against the justified position is allowed but flagged as an override — say so.
+- **Stalemates have three exits — try them in this order.**
+  1. `synthesize <issue> "<hybrid>" --from <p1> --from <p2>` — recombine the
+     rivals with recorded lineage. Caveat: the hybrid *joins* the rivalry
+     until the parents are conceded or a preference/audience elevates it.
+  2. `reframe <issue> "<new framing>" --basis <label>` — when the deadlock is
+     a false dichotomy. Positions don't carry over; the dead framing leaves
+     the agenda; lineage is recorded.
+  3. `prefer <winner> <loser> --basis <label>` — an honest value call, when
+     the options really are exhaustive.
+  A new argument helps only if it attacks from *outside* the cycle.
+- **Name the values, then the audiences.** Tag contributions with `--promotes
+  <value>` (or `promote <node> <value>` on your own nodes); record stakeholder
+  rankings with `audience <name> <v1> <v2>…`; read the conflict with
+  `audiences` and `status --under <name>`. Robust-across-audiences is the
+  strongest justification a wicked question admits.
+- **Decisions are closing acts — provisionally.** `decide <issue> <position>`
+  is rejected on an already-decided issue; overturning goes through `supersede
+  <issue> <position> --basis <label>`, which records *why* and links the prior
+  decision. Deciding against the justified position is allowed but flagged as
+  an override — say so. Record known provisionality with `--review-by <T>`;
+  `check` flags the decision when the horizon passes.
 - **Withdraw only your own mistakes** with `concede <node>` (checked against
   `--author`).
 
@@ -140,6 +181,9 @@ objections); or a move budget runs out.
 - `dlktk check [--all] [--strict]` in CI: exit `5` means a recorded decision has
   drifted (its position is no longer justified) — re-argue it or `supersede` it.
   This is what turns a decision from archaeology into a living constraint.
+  `--strict` also fails on warnings: stalemates, never-attacked decisions
+  (`untested_decision`), expired review horizons (`review_due`), and decisions
+  resting on defeated assumptions (`defeated_assumption`).
 
 ## Postmortem
 

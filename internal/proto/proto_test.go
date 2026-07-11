@@ -20,15 +20,15 @@ func fixture(t *testing.T) (s *store.Store, m *Mover, issue, posA, posB string) 
 	if err := s.AddDiscussion(ibis.Discussion{ID: "disc-1", Title: "t", CreatedBy: "tester"}); err != nil {
 		t.Fatal(err)
 	}
-	issue, err = m.Raise("disc-1", "which lock?", "", "")
+	issue, err = m.Raise("disc-1", "which lock?", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	posA, err = m.Propose("disc-1", issue, "mutex")
+	posA, err = m.Propose("disc-1", issue, "mutex", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	posB, err = m.Propose("disc-1", issue, "rwlock")
+	posB, err = m.Propose("disc-1", issue, "rwlock", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,13 +49,13 @@ func wantIllegal(t *testing.T, err error, context string) {
 func TestDecideSupersedePolicy(t *testing.T) {
 	s, m, issue, posA, posB := fixture(t)
 
-	if err := m.Decide("disc-1", issue, posA, "first call"); err != nil {
+	if err := m.Decide("disc-1", issue, posA, "first call", 0); err != nil {
 		t.Fatalf("first decide: %v", err)
 	}
-	wantIllegal(t, m.Decide("disc-1", issue, posB, "second call"), "bare re-decide")
-	wantIllegal(t, m.Supersede("disc-1", issue, posB, ""), "supersede without basis")
+	wantIllegal(t, m.Decide("disc-1", issue, posB, "second call", 0), "bare re-decide")
+	wantIllegal(t, m.Supersede("disc-1", issue, posB, "", 0), "supersede without basis")
 
-	if err := m.Supersede("disc-1", issue, posB, "benchmarks favour rwlock"); err != nil {
+	if err := m.Supersede("disc-1", issue, posB, "benchmarks favour rwlock", 0); err != nil {
 		t.Fatalf("supersede: %v", err)
 	}
 	decs, err := s.Decisions("disc-1", store.Now())
@@ -73,7 +73,7 @@ func TestDecideSupersedePolicy(t *testing.T) {
 
 func TestSupersedeRequiresStandingDecision(t *testing.T) {
 	_, m, issue, posA, _ := fixture(t)
-	wantIllegal(t, m.Supersede("disc-1", issue, posA, "basis"), "supersede with nothing decided")
+	wantIllegal(t, m.Supersede("disc-1", issue, posA, "basis", 0), "supersede with nothing decided")
 }
 
 // Two agents concurrently asserting prefer A>B and prefer B>A is the ANALYSIS
@@ -126,7 +126,7 @@ func TestConcedeOwnershipIsAuthorNotRole(t *testing.T) {
 	alice := New(s, "alice", "Reviewer")
 	bob := New(s, "bob", "Reviewer")
 
-	node, err := alice.Propose("disc-1", mustIssue(t, s), "alice's position")
+	node, err := alice.Propose("disc-1", mustIssue(t, s), "alice's position", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,10 +144,10 @@ func TestRoleAutoRecordsRoster(t *testing.T) {
 	s, _, _, posA, _ := fixture(t) // fixture's mover has no role
 
 	sec := New(s, "alice", "Security")
-	if _, err := sec.Object("disc-1", posA, "threat model gap"); err != nil {
+	if _, err := sec.Object("disc-1", posA, "threat model gap", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sec.Object("disc-1", posA, "second objection"); err != nil {
+	if _, err := sec.Object("disc-1", posA, "second objection", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -191,7 +191,7 @@ func TestMoveRollsBackAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Propose("disc-1", "no-such-issue", "ghost"); err == nil {
+	if _, err := m.Propose("disc-1", "no-such-issue", "ghost", ""); err == nil {
 		t.Fatal("propose on missing issue should fail")
 	}
 	after, err := s.Nodes("disc-1", store.Now())

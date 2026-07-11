@@ -8,6 +8,7 @@ package proto
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/chazu/dlktk/internal/af"
 	"github.com/chazu/dlktk/internal/ibis"
@@ -42,10 +43,11 @@ func (m *Mover) ensureRoster(s *store.Store, disc string) error {
 	return s.AddRoster(ibis.Roster{Disc: disc, Author: m.author, Role: m.role})
 }
 
-// Raise adds an issue, optionally responding to a parent issue, with the given
-// cardinality (empty defaults to select_one). Cardinality is fixed at creation
-// (design §16 Q7). Returns the new issue id.
-func (m *Mover) Raise(disc, text, parent string, card ibis.Cardinality) (string, error) {
+// Raise adds an issue, optionally responding to a parent issue or recording
+// the position/argument that revealed it (from), with the given cardinality
+// (empty defaults to select_one). Cardinality is fixed at creation (design §16
+// Q7). Returns the new issue id.
+func (m *Mover) Raise(disc, text, parent, from string, card ibis.Cardinality) (string, error) {
 	nid := id.New()
 	err := m.s.Move(func(s *store.Store) error {
 		if err := m.ensureRoster(s, disc); err != nil {
@@ -55,7 +57,7 @@ func (m *Mover) Raise(disc, text, parent string, card ibis.Cardinality) (string,
 		if err != nil {
 			return err
 		}
-		if err := g.CanRaise(parent); err != nil {
+		if err := g.CanRaise(parent, from); err != nil {
 			return err
 		}
 		if card == "" {
@@ -70,6 +72,9 @@ func (m *Mover) Raise(disc, text, parent string, card ibis.Cardinality) (string,
 		if parent != "" {
 			return m.addLink(s, disc, nid, parent, ibis.RespondsTo)
 		}
+		if from != "" {
+			return m.addLink(s, disc, nid, from, ibis.RaisedFrom)
+		}
 		return nil
 	})
 	if err != nil {
@@ -78,8 +83,54 @@ func (m *Mover) Raise(disc, text, parent string, card ibis.Cardinality) (string,
 	return nid, nil
 }
 
-// Propose adds a position responding to an issue. Returns the new position id.
-func (m *Mover) Propose(disc, issue, text string) (string, error) {
+// Reframe replaces an issue's framing: it raises a fresh issue (its own
+// cardinality; positions do not carry over — under a new framing they mean
+// different things, the Q7 argument) and records the lineage with a mandatory
+// basis. A decided issue cannot be reframed: supersede the decision first, or
+// the reframe would silently bury it. Returns the new issue id.
+func (m *Mover) Reframe(disc, old, text, basis string, card ibis.Cardinality) (string, error) {
+	if basis == "" {
+		return "", &ibis.IllegalMove{Node: old,
+			Detail: "reframe requires --basis: record why the framing is replaced"}
+	}
+	nid := id.New()
+	err := m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
+		g, err := s.Graph(disc, store.Now())
+		if err != nil {
+			return err
+		}
+		if err := g.CanReframe(old); err != nil {
+			return err
+		}
+		if prior, err := standingDecision(s, disc, old); err != nil {
+			return err
+		} else if prior != nil {
+			return &ibis.IllegalMove{Node: old, Detail: fmt.Sprintf(
+				"issue %s has a standing decision (-> %s); supersede it before reframing, or raise a fresh issue", old, prior.Position)}
+		}
+		if card == "" {
+			card = ibis.SelectOne
+		}
+		if err := s.AddNode(ibis.Node{ID: nid, Disc: disc, Kind: ibis.Issue, Text: text, Author: m.author}); err != nil {
+			return err
+		}
+		if err := s.SetIssueCard(ibis.IssueCard{Issue: nid, Cardinality: card}); err != nil {
+			return err
+		}
+		return s.AddReframe(ibis.Reframe{Disc: disc, Old: old, New: nid, Basis: basis, Author: m.author})
+	})
+	if err != nil {
+		return "", err
+	}
+	return nid, nil
+}
+
+// Propose adds a position responding to an issue, optionally recording the
+// value it promotes. Returns the new position id.
+func (m *Mover) Propose(disc, issue, text, promotes string) (string, error) {
 	nid := id.New()
 	err := m.s.Move(func(s *store.Store) error {
 		if err := m.ensureRoster(s, disc); err != nil {
@@ -95,6 +146,9 @@ func (m *Mover) Propose(disc, issue, text string) (string, error) {
 		if err := s.AddNode(ibis.Node{ID: nid, Disc: disc, Kind: ibis.Position, Text: text, Author: m.author}); err != nil {
 			return err
 		}
+		if err := m.addValue(s, disc, nid, promotes); err != nil {
+			return err
+		}
 		return m.addLink(s, disc, nid, issue, ibis.RespondsTo)
 	})
 	if err != nil {
@@ -103,17 +157,64 @@ func (m *Mover) Propose(disc, issue, text string) (string, error) {
 	return nid, nil
 }
 
+// Synthesize adds a hybrid position recombining two or more existing positions
+// on the same issue, recording the lineage. The hybrid is an ordinary position
+// to the evaluator — on a select_one issue it joins the rivalry, parents
+// included, until they are conceded or a preference/audience elevates it.
+func (m *Mover) Synthesize(disc, issue, text string, froms []string, promotes string) (string, error) {
+	nid := id.New()
+	err := m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
+		g, err := s.Graph(disc, store.Now())
+		if err != nil {
+			return err
+		}
+		if err := g.CanSynthesize(issue, froms); err != nil {
+			return err
+		}
+		if err := s.AddNode(ibis.Node{ID: nid, Disc: disc, Kind: ibis.Position, Text: text, Author: m.author}); err != nil {
+			return err
+		}
+		if err := m.addValue(s, disc, nid, promotes); err != nil {
+			return err
+		}
+		if err := m.addLink(s, disc, nid, issue, ibis.RespondsTo); err != nil {
+			return err
+		}
+		for _, f := range froms {
+			if err := m.addLink(s, disc, nid, f, ibis.Synthesizes); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return nid, nil
+}
+
 // Support adds an argument supporting a position or argument.
-func (m *Mover) Support(disc, target, text string) (string, error) {
-	return m.attach(disc, target, text, ibis.Supports)
+func (m *Mover) Support(disc, target, text, promotes string) (string, error) {
+	return m.attach(disc, target, text, ibis.Supports, "", promotes)
 }
 
 // Object adds an argument objecting to a position or argument.
-func (m *Mover) Object(disc, target, text string) (string, error) {
-	return m.attach(disc, target, text, ibis.ObjectsTo)
+func (m *Mover) Object(disc, target, text, promotes string) (string, error) {
+	return m.attach(disc, target, text, ibis.ObjectsTo, "", promotes)
 }
 
-func (m *Mover) attach(disc, target, text string, rel ibis.Rel) (string, error) {
+// Assume adds an argument tagged as an assumption — a challengeable premise
+// its target rests on. It supports the target (inert in the labelling, §3.5);
+// the tag is bookkeeping that agenda/check use to surface unexamined or
+// defeated premises.
+func (m *Mover) Assume(disc, target, text string) (string, error) {
+	return m.attach(disc, target, text, ibis.Supports, ibis.TagAssumption, "")
+}
+
+func (m *Mover) attach(disc, target, text string, rel ibis.Rel, tag, promotes string) (string, error) {
 	nid := id.New()
 	err := m.s.Move(func(s *store.Store) error {
 		if err := m.ensureRoster(s, disc); err != nil {
@@ -126,7 +227,10 @@ func (m *Mover) attach(disc, target, text string, rel ibis.Rel) (string, error) 
 		if err := g.CanAttach(target, rel); err != nil {
 			return err
 		}
-		if err := s.AddNode(ibis.Node{ID: nid, Disc: disc, Kind: ibis.Argument, Text: text, Author: m.author}); err != nil {
+		if err := s.AddNode(ibis.Node{ID: nid, Disc: disc, Kind: ibis.Argument, Text: text, Author: m.author, Tag: tag}); err != nil {
+			return err
+		}
+		if err := m.addValue(s, disc, nid, promotes); err != nil {
 			return err
 		}
 		return m.addLink(s, disc, nid, target, rel)
@@ -135,6 +239,66 @@ func (m *Mover) attach(disc, target, text string, rel ibis.Rel) (string, error) 
 		return "", err
 	}
 	return nid, nil
+}
+
+// Promote tags an existing node with the value it promotes (audience lens
+// input). Ownership is checked: a value changes the node's fate under every
+// audience and is otherwise unretractable.
+func (m *Mover) Promote(disc, node, value string) error {
+	if value == "" {
+		return &ibis.IllegalMove{Node: node, Detail: "promote requires a value"}
+	}
+	return m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
+		g, err := s.Graph(disc, store.Now())
+		if err != nil {
+			return err
+		}
+		if err := g.CanPromote(node, m.author); err != nil {
+			return err
+		}
+		return s.AddValue(ibis.ValueTag{Disc: disc, Node: node, Value: value, Author: m.author})
+	})
+}
+
+// addValue writes an optional value tag for a node the mover just created (no
+// ownership check needed: the node is the mover's own).
+func (m *Mover) addValue(s *store.Store, disc, node, value string) error {
+	if value == "" {
+		return nil
+	}
+	return s.AddValue(ibis.ValueTag{Disc: disc, Node: node, Value: value, Author: m.author})
+}
+
+// DeclareAudience records a named strict value ranking. Re-declaring an
+// existing name requires supersede=true and a basis — retiring a ranking that
+// every robustness verdict depends on must record why (the Q4 pattern); the
+// prior fact's vt interval is closed atomically with the new declaration.
+func (m *Mover) DeclareAudience(disc, name string, ranking []string, supersede bool, basis string) error {
+	if supersede && basis == "" {
+		return &ibis.IllegalMove{Node: name,
+			Detail: "audience --supersede requires --basis: record why the prior ranking is retired"}
+	}
+	return m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
+		g, err := s.Graph(disc, store.Now())
+		if err != nil {
+			return err
+		}
+		if err := g.CanAudience(name, ranking, supersede); err != nil {
+			return err
+		}
+		if supersede {
+			if err := s.SupersedeAudience(disc, name); err != nil {
+				return err
+			}
+		}
+		return s.AddAudience(ibis.Audience{Disc: disc, Name: name, Ranking: ranking, Basis: basis, Author: m.author})
+	})
 }
 
 // Prefer records winner preferred to loser with a basis label. The acyclicity
@@ -168,8 +332,12 @@ func (m *Mover) Prefer(disc, winner, loser, basis string) (string, error) {
 // the accepted position is not IN under the current grounded labelling. A bare
 // re-decide on an already-decided issue is rejected: overturning a standing
 // decision must go through Supersede so the reversal carries a recorded basis
-// (design §16 Q4).
-func (m *Mover) Decide(disc, issue, position, basis string) error {
+// (design §16 Q4). reviewBy (unix seconds, 0 = none) records a re-examination
+// horizon: check reports the decision once the horizon passes.
+func (m *Mover) Decide(disc, issue, position, basis string, reviewBy int64) error {
+	if err := validReviewBy(issue, reviewBy); err != nil {
+		return err
+	}
 	return m.s.Move(func(s *store.Store) error {
 		if err := m.ensureRoster(s, disc); err != nil {
 			return err
@@ -198,19 +366,33 @@ func (m *Mover) Decide(disc, issue, position, basis string) error {
 		return s.AddDecision(ibis.Decision{
 			Disc: disc, Issue: issue, Position: position, Basis: basis,
 			Decider: m.author, Override: labels[position] != af.IN,
+			ReviewBy: reviewBy,
 		})
 	})
+}
+
+// validReviewBy rejects a review horizon that is already in the past.
+func validReviewBy(issue string, reviewBy int64) error {
+	if reviewBy != 0 && reviewBy <= time.Now().Unix() {
+		return &ibis.IllegalMove{Node: issue,
+			Detail: "review-by must be in the future (it records the re-examination horizon)"}
+	}
+	return nil
 }
 
 // Supersede overturns the standing decision on an issue with a new one. The
 // basis is mandatory — the whole point of the move is forcing the reasoning for
 // the reversal to be captured — and the new decision links the position it
 // supersedes (design §16 Q4). Closing the prior decision and recording the new
-// one are atomic: no window where the issue stands undecided.
-func (m *Mover) Supersede(disc, issue, position, basis string) error {
+// one are atomic: no window where the issue stands undecided. Superseding with
+// the same position and a fresh reviewBy is how a review horizon is re-armed.
+func (m *Mover) Supersede(disc, issue, position, basis string, reviewBy int64) error {
 	if basis == "" {
 		return &ibis.IllegalMove{Node: issue,
 			Detail: "supersede requires --basis: record why the prior decision is overturned"}
+	}
+	if err := validReviewBy(issue, reviewBy); err != nil {
+		return err
 	}
 	return m.s.Move(func(s *store.Store) error {
 		if err := m.ensureRoster(s, disc); err != nil {
@@ -243,7 +425,7 @@ func (m *Mover) Supersede(disc, issue, position, basis string) error {
 		return s.AddDecision(ibis.Decision{
 			Disc: disc, Issue: issue, Position: position, Basis: basis,
 			Decider: m.author, Override: labels[position] != af.IN,
-			Supersedes: prior.Position,
+			Supersedes: prior.Position, ReviewBy: reviewBy,
 		})
 	})
 }

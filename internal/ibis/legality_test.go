@@ -18,7 +18,7 @@ func testGraph() *Graph {
 		{ID: "l3", Src: "C", Dst: "B", Rel: ObjectsTo},
 	}
 	prefs := []Preference{{ID: "p1", Winner: "A", Loser: "B"}}
-	return NewGraph(nodes, links, prefs, []IssueCard{{Issue: "I", Cardinality: SelectOne}})
+	return NewGraph(nodes, links, prefs, []IssueCard{{Issue: "I", Cardinality: SelectOne}}, nil, nil, nil)
 }
 
 // The discover contract reserves exit 3 for "a referenced id does not exist"
@@ -31,8 +31,8 @@ func TestLegalityErrorKinds(t *testing.T) {
 		err      error
 		notFound bool // else IllegalMove
 	}{
-		{"raise missing parent", g.CanRaise("nope"), true},
-		{"raise non-issue parent", g.CanRaise("A"), false},
+		{"raise missing parent", g.CanRaise("nope", ""), true},
+		{"raise non-issue parent", g.CanRaise("A", ""), false},
 		{"propose missing issue", g.CanPropose("nope"), true},
 		{"propose at position", g.CanPropose("A"), false},
 		{"attach missing target", g.CanAttach("nope", ObjectsTo), true},
@@ -66,8 +66,8 @@ func TestLegalityErrorKinds(t *testing.T) {
 func TestLegalityAccepts(t *testing.T) {
 	g := testGraph()
 	for name, err := range map[string]error{
-		"raise root":      g.CanRaise(""),
-		"raise child":     g.CanRaise("I"),
+		"raise root":      g.CanRaise("", ""),
+		"raise child":     g.CanRaise("I", ""),
 		"propose":         g.CanPropose("I"),
 		"object position": g.CanAttach("B", ObjectsTo),
 		"object argument": g.CanAttach("C", ObjectsTo),

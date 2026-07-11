@@ -12,7 +12,9 @@ import (
 	"github.com/chazu/dlktk/internal/ibis"
 )
 
-// PositionView is one position's status within an issue.
+// PositionView is one position's status within an issue. Untested marks an IN
+// label earned by silence: no attacker ever engaged it, so "justified" means
+// "unexamined", not "vindicated".
 type PositionView struct {
 	ID         string   `json:"id"`
 	Text       string   `json:"text"`
@@ -20,6 +22,7 @@ type PositionView struct {
 	AttackedBy []string `json:"attacked_by"`
 	DefeatedBy []string `json:"defeated_by"`
 	Reinstated bool     `json:"reinstated"`
+	Untested   bool     `json:"untested,omitempty"`
 }
 
 // DecidedView is the standing decision on an issue, if any.
@@ -29,6 +32,7 @@ type DecidedView struct {
 	Decider    string `json:"decider"`
 	Override   bool   `json:"override"`
 	Supersedes string `json:"supersedes,omitempty"`
+	ReviewBy   int64  `json:"review_by,omitempty"`
 }
 
 // IssueStatus is the status envelope for one issue (design §8.3).
@@ -36,10 +40,12 @@ type IssueStatus struct {
 	Issue       string         `json:"issue"`
 	IssueText   string         `json:"issue_text"`
 	Cardinality string         `json:"cardinality"`
+	Under       string         `json:"under,omitempty"` // audience lens, when --under is set
 	Positions   []PositionView `json:"positions"`
 	Undecided   []string       `json:"undecided"`
 	Stalemate   bool           `json:"stalemate"`
 	Advice      string         `json:"advice"`
+	ReframedTo  string         `json:"reframed_to,omitempty"` // this framing was replaced
 	Decided     *DecidedView   `json:"decided,omitempty"`
 }
 
@@ -79,16 +85,20 @@ func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue s
 			AttackedBy: atk,
 			DefeatedBy: def,
 			Reinstated: lbl == af.IN && len(atk) > 0,
+			Untested:   lbl == af.IN && len(atk) == 0,
 		})
 		if lbl == af.UNDEC {
 			st.Undecided = append(st.Undecided, p)
 		}
 	}
+	if to, ok := g.ReframedTo(issue); ok {
+		st.ReframedTo = to
+	}
 	st.Stalemate = isStalemate(st)
 	st.Advice = advise(st)
 	for _, d := range decs {
 		if d.Issue == issue {
-			st.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes}
+			st.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy}
 		}
 	}
 	return st
@@ -120,15 +130,25 @@ func advise(st IssueStatus) string {
 			undec = append(undec, p.ID)
 		}
 	}
+	var untested []string
+	for _, p := range st.Positions {
+		if p.Untested {
+			untested = append(untested, p.ID)
+		}
+	}
 	switch {
+	case st.ReframedTo != "":
+		return fmt.Sprintf("reframed → %s (this framing was replaced; argue there)", st.ReframedTo)
 	case len(st.Positions) == 0:
 		return "no positions yet; propose one"
+	case len(in) == 1 && len(undec) == 0 && len(untested) == 1:
+		return fmt.Sprintf("%s justified — but untested (never attacked); stress-test it before deciding", in[0])
 	case len(in) == 1 && len(undec) == 0:
 		return fmt.Sprintf("%s justified", in[0])
 	case st.Stalemate:
-		return fmt.Sprintf("mutual stalemate — %s all UNDEC, none defeated; a preference resolves this (a new argument helps only if it defeats from outside the stalemate)", strings.Join(undec, " vs "))
+		return fmt.Sprintf("mutual stalemate — %s all UNDEC, none defeated; a preference resolves it, a synthesis of the rivals may transcend it, and a reframe is worth considering if this is a false dichotomy (a new argument helps only if it defeats from outside the stalemate)", strings.Join(undec, " vs "))
 	case len(undec) >= 2 && len(in) == 0:
-		return fmt.Sprintf("%s contested — needs a preference or a defeating argument", strings.Join(undec, " vs "))
+		return fmt.Sprintf("%s contested — needs a preference, a defeating argument, or a synthesis", strings.Join(undec, " vs "))
 	case len(in) >= 1:
 		return fmt.Sprintf("%s justified", strings.Join(in, ", "))
 	default:
@@ -139,8 +159,12 @@ func advise(st IssueStatus) string {
 // StatusText renders an issue status as human text.
 func StatusText(st IssueStatus) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s %s  %s  %s\n",
-		cBold("issue"), cID(ibis.PrefixFor(ibis.Issue)+st.Issue), quote(st.IssueText), cDim("["+st.Cardinality+"]"))
+	lens := ""
+	if st.Under != "" {
+		lens = cDim(" [under audience " + st.Under + "]")
+	}
+	fmt.Fprintf(&b, "%s %s  %s  %s%s\n",
+		cBold("issue"), cID(ibis.PrefixFor(ibis.Issue)+st.Issue), quote(st.IssueText), cDim("["+st.Cardinality+"]"), lens)
 	if len(st.Positions) == 0 {
 		b.WriteString("  " + cDim("(no positions yet — propose one)") + "\n")
 	}
@@ -181,6 +205,9 @@ func positionNote(p PositionView) string {
 	case "IN":
 		if p.Reinstated {
 			return "reinstated — an attacker was itself defeated"
+		}
+		if p.Untested {
+			return "justified — but untested (never attacked)"
 		}
 		return "justified — no surviving attacker"
 	case "OUT":
@@ -311,6 +338,7 @@ func (t *treeWriter) legend() string {
 		t.relGlyph(ibis.RespondsTo) + "position",
 		t.relGlyph(ibis.ObjectsTo) + "objects-to",
 		t.relGlyph(ibis.Supports) + "supports",
+		t.relGlyph(ibis.RaisedFrom) + "raised-from",
 		cBold(t.glyph("★", "@")) + " decided",
 	}
 	if t.opts.Labels {
@@ -390,6 +418,9 @@ func (t *treeWriter) writeBody(node string, rel ibis.Rel, prefix, connector, chi
 			head += cDim("[" + string(card) + "] ")
 		}
 	}
+	if n.Tag == ibis.TagAssumption {
+		head += cDim("[assumption] ")
+	}
 
 	tail := ""
 	if !t.opts.NoIDs {
@@ -398,10 +429,23 @@ func (t *treeWriter) writeBody(node string, rel ibis.Rel, prefix, connector, chi
 	if who := t.attribution(n); who != "" {
 		tail += "  " + who
 	}
+	// Synthesis lineage: the hybrid names its parents inline.
+	if parents := synthesizedFrom(t.g, node); len(parents) > 0 {
+		for i, p := range parents {
+			parents[i] = pid(p)
+		}
+		tail += "  " + cDim(t.glyph("⊕ from ", "(+) from ")) + strings.Join(parents, cDim("+"))
+	}
 	// On the issue line, name the standing decision so it is visible without
 	// scanning the subtree for the ★-marked position.
 	if pos, ok := t.issueDecision[node]; ok {
 		tail += "  " + labelColorBold("IN", t.glyph("✓", "v")+" decided: ") + pid(pos)
+	}
+	// Reframe lineage: a replaced framing points at its successor.
+	if n.Kind == ibis.Issue {
+		if to, ok := t.g.ReframedTo(node); ok {
+			tail += "  " + cDim(t.glyph("↻ reframed → ", "~> reframed: ")) + cID(ibis.PrefixFor(ibis.Issue)+to)
+		}
 	}
 
 	// Text column starts after prefix + connector + head; continuation lines
@@ -498,8 +542,23 @@ func (t *treeWriter) relGlyph(rel ibis.Rel) string {
 		return labelColorBold("IN", "+ ") // green: reinforcement
 	case ibis.RespondsTo:
 		return paint(ansiBlueBold, t.glyph("• ", "* ")) // blue: a stance on the issue
+	case ibis.RaisedFrom:
+		return cDim(t.glyph("⤷ ", "~ ")) // a deeper question this node revealed
 	}
 	return ""
+}
+
+// synthesizedFrom returns the parent positions a hybrid was recombined from,
+// sorted, or nil.
+func synthesizedFrom(g *ibis.Graph, node string) []string {
+	var out []string
+	for _, l := range g.Links {
+		if l.Rel == ibis.Synthesizes && l.Src == node {
+			out = append(out, l.Dst)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (t *treeWriter) glyph(unicode, ascii string) string {
@@ -510,10 +569,13 @@ func (t *treeWriter) glyph(unicode, ascii string) string {
 }
 
 // childrenOf returns the downward IBIS links from node, in graph order.
+// raised_from nests a spawned sub-issue under the node that revealed it;
+// synthesizes is lineage, not nesting (the hybrid already renders under its
+// issue).
 func childrenOf(g *ibis.Graph, node string) []childEdge {
 	var out []childEdge
 	for _, l := range g.Links {
-		if l.Dst == node && (l.Rel == ibis.RespondsTo || l.Rel == ibis.Supports || l.Rel == ibis.ObjectsTo) {
+		if l.Dst == node && (l.Rel == ibis.RespondsTo || l.Rel == ibis.Supports || l.Rel == ibis.ObjectsTo || l.Rel == ibis.RaisedFrom) {
 			out = append(out, childEdge{src: l.Src, rel: l.Rel})
 		}
 	}
@@ -587,9 +649,12 @@ func positionsFor(g *ibis.Graph, issue string) []string {
 	return ps
 }
 
+// respondsToSomething reports whether a node hangs off another node in the
+// tree — via responds_to (a sub-issue/position) or raised_from (an issue
+// spawned by an argument). Such nodes are not roots: they render nested.
 func respondsToSomething(g *ibis.Graph, node string) bool {
 	for _, l := range g.Links {
-		if l.Src == node && l.Rel == ibis.RespondsTo {
+		if l.Src == node && (l.Rel == ibis.RespondsTo || l.Rel == ibis.RaisedFrom) {
 			return true
 		}
 	}

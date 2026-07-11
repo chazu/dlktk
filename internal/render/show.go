@@ -23,19 +23,21 @@ type LinkView struct {
 // NodeView is the `show` envelope: one node in full, with every incident link
 // (design §6.2).
 type NodeView struct {
-	ID      string       `json:"id"`
-	Kind    string       `json:"kind"`
-	Text    string       `json:"text"`
-	Author  string       `json:"author,omitempty"`
-	Label   string       `json:"label,omitempty"` // AF nodes only
-	Links   []LinkView   `json:"links"`
-	Decided *DecidedView `json:"decided,omitempty"` // issues with a standing decision
+	ID       string       `json:"id"`
+	Kind     string       `json:"kind"`
+	Text     string       `json:"text"`
+	Author   string       `json:"author,omitempty"`
+	Tag      string       `json:"tag,omitempty"`      // "assumption"
+	Promotes string       `json:"promotes,omitempty"` // the value this node promotes
+	Label    string       `json:"label,omitempty"`    // AF nodes only
+	Links    []LinkView   `json:"links"`
+	Decided  *DecidedView `json:"decided,omitempty"` // issues with a standing decision
 }
 
 // Show builds the full view of one node.
 func Show(g *ibis.Graph, labels map[string]af.Label, node string, decs []ibis.Decision) NodeView {
 	n := g.Nodes[node]
-	v := NodeView{ID: n.ID, Kind: string(n.Kind), Text: n.Text, Author: n.Author}
+	v := NodeView{ID: n.ID, Kind: string(n.Kind), Text: n.Text, Author: n.Author, Tag: n.Tag, Promotes: g.Values[node]}
 	if g.IsAFNode(node) {
 		v.Label = string(labels[node])
 	}
@@ -60,7 +62,7 @@ func Show(g *ibis.Graph, labels map[string]af.Label, node string, decs []ibis.De
 	if n.Kind == ibis.Issue {
 		for _, d := range decs {
 			if d.Issue == node {
-				v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes}
+				v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy}
 			}
 		}
 	}
@@ -84,6 +86,12 @@ func ShowText(v NodeView) string {
 		header = append(header, labelInline(v.Label))
 	}
 	header = append(header, nid(v.Kind, v.ID))
+	if v.Tag != "" {
+		header = append(header, cDim("["+v.Tag+"]"))
+	}
+	if v.Promotes != "" {
+		header = append(header, cDim("promotes "+v.Promotes))
+	}
 	if v.Author != "" {
 		header = append(header, cDim("by "+v.Author))
 	}
