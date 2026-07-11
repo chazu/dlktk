@@ -6,6 +6,12 @@ expected utility. The companion document
 [`wicked-problems-plan.md`](wicked-problems-plan.md) turns these into an
 implementation plan.*
 
+> **Status: implemented** (contract 0.10.0). All ten items shipped, revised
+> per the adversarial review recorded at the end of the plan. User-facing
+> documentation: README (feature summary), INTRODUCTION §7 (concepts),
+> AGENTS.md + `skills/dlktk-dialectic` (the agent playbook), `dlktk discover`
+> (the machine contract). This document remains the rationale.
+
 ## The diagnosis
 
 There is a pleasing historical resonance in this project: IBIS was invented by

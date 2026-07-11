@@ -110,18 +110,28 @@ Every idea above maps to a command:
 | You want to… | Concept | Command |
 |---|---|---|
 | Pose a question | Issue | `dlktk raise "…" [--card select_one\|open]` |
+| Pose the deeper question an argument revealed | Issue provenance | `dlktk raise "…" --from <node>` |
+| Replace a mis-framed question | Reframing | `dlktk reframe <issue> "…" --basis …` |
 | Offer an answer | Position | `dlktk propose <issue> "…"` |
+| Recombine rival answers | Synthesis | `dlktk synthesize <issue> "…" --from <p1> --from <p2>` |
 | Object to something | Attack | `dlktk object <target> "…"` |
 | Back something | Support | `dlktk support <target> "…"` |
+| Name a premise something rests on | Assumption | `dlktk assume <target> "…"` |
 | Break a tie | Preference | `dlktk prefer <winner> <loser> --basis …` |
-| Record the call | Decision | `dlktk decide <issue> <position> --basis …` |
+| Say what a claim is *for* | Value | `dlktk propose … --promotes <value>` / `dlktk promote <node> <value>` |
+| Record a stakeholder's value ranking | Audience | `dlktk audience <name> <v1> <v2> …` |
+| Record the call | Decision | `dlktk decide <issue> <position> --basis … [--review-by T]` |
 | Overturn the call | Supersession | `dlktk supersede <issue> <position> --basis …` |
-| See what stands | Grounded labelling | `dlktk status [issue]` |
+| See what stands | Grounded labelling | `dlktk status [issue] [--under <audience>]` |
 | See the shape | The graph | `dlktk tree [issue]` |
 | Understand one label | Local explanation | `dlktk why <node>` |
 | Follow the whole derivation | The fixpoint, traced | `dlktk explain <issue>` |
-| See open questions | The UNDEC set | `dlktk agenda` |
+| See open questions | The worklist | `dlktk agenda` |
 | Ask "what next?" | Legal useful moves | `dlktk moves <issue>` |
+| Probe a move without making it | Counterfactual | `dlktk whatif <issue> --object …/--prefer …/--without …` |
+| See what the verdict rests on | Crux | `dlktk crux <issue>` |
+| See the coherent stances a deadlock admits | Preferred extensions | `dlktk worlds <issue>` |
+| See what survives every value ranking | Robustness | `dlktk audiences` |
 
 The capture verbs (`raise`/`propose`/`object`/…) build the graph. The read verbs (`status`/`tree`/`why`/`explain`/…) run and report the inference. You never label anything by hand — you state arguments, and the labelling is derived.
 
@@ -251,7 +261,41 @@ Usually you decide *in favour of* the justified position, and `status`/`tree` sh
 
 ---
 
-## 7. For agents
+## 7. When the question itself is the problem
+
+Everything so far assumes the question is well-posed and the candidates are on
+the table — the *adjudication* half of deliberation. Open-ended ("wicked")
+questions need the *divergent* half too, and dlktk supports it with the same
+honesty discipline:
+
+- **Untested ≠ justified.** An IN position nobody ever attacked is marked
+  *untested* — justified by silence, not by surviving attack. The agenda lists
+  these so the obvious first answer gets stress-tested before anyone decides.
+- **Stalemates have three exits**, not one: `synthesize` a hybrid of the
+  rivals (lineage recorded), `reframe` the question if the deadlock is a false
+  dichotomy (the old framing leaves the agenda; why is recorded), or `prefer`
+  — the honest value call.
+- **Explore before you commit.** `whatif` applies hypothetical moves in memory
+  and shows what would flip (nothing is written); `crux` finds the
+  load-bearing arguments; `worlds` enumerates the coherent stances a contested
+  issue admits (the *preferred extensions* of the same attack graph — the
+  exploration lens; grounded stays the referee).
+- **Plural values are computed, not bulldozed.** Tag claims with the value
+  they promote, record each stakeholder's ranking as an *audience*, and
+  `audiences` reports which positions survive *every* ranking (robust) versus
+  which hinge on whose values govern — for a wicked problem, that map is often
+  the real deliverable.
+- **Closure is provisional.** `assume` records the premises a conclusion rests
+  on (and `check` flags decisions standing on a defeated one);
+  `decide --review-by T` records a re-examination horizon that `check`
+  enforces.
+
+The full rationale — why each of these exists and what it buys — is in
+[`wicked-problems.md`](wicked-problems.md).
+
+---
+
+## 8. For agents
 
 Every verb is equally drivable by a program. Add `--format json` to any read for a structured envelope, and run `dlktk discover` to get the full machine-readable contract — the move/read vocabulary, each move's legality precondition, the JSON shape every read returns, the exit-code/error catalog, and the global flags. An agent can learn to drive the tool *cold* from that one document, then use `moves`/`agenda`/`why`/`explain` to reason about what to do — the same surfaces a human uses, in JSON.
 
@@ -271,6 +315,14 @@ Every verb is equally drivable by a program. Add `--format json` to any read for
 - **Stalemate** — all positions UNDEC with none defeated; a cycle or symmetric tie needing a preference.
 - **Bitemporal** — the store tracks both when a fact was true and when it was recorded, enabling replay.
 - **Decision** — a recorded commitment to a position, distinct from it being justified.
+- **Untested** — IN with no attackers: justified by silence, not by surviving attack.
+- **Reframe** — replacing an issue's framing with a fresh issue, lineage and basis recorded; positions do not carry over.
+- **Synthesis** — a hybrid position recombining two or more rivals, with recorded lineage.
+- **Assumption** — a premise recorded with `assume`: supports its target (inert in the labelling) but tracked so unexamined or defeated premises surface.
+- **Value / audience** — a value is what a claim promotes; an audience is a named strict ranking over values. Under an audience, an attack on a strictly higher-ranked value fails (value-based argumentation).
+- **Preferred extension / world** — a maximal internally coherent stance the attack graph admits; `worlds` enumerates them as the exploration lens beside the grounded referee.
+- **Crux** — an argument whose removal flips a position: what the verdict actually rests on.
+- **Review horizon** — a recorded re-examination date on a decision (`--review-by`); `check` reports the decision once it passes.
 
 ## Where to go next
 

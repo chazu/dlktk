@@ -6,6 +6,11 @@ stands on this branch (contract 0.9.0), then revised after an adversarial
 review pass (see "Review findings incorporated" at the end). Each item lists
 the touched packages, data-model changes, surfaces, and tests.*
 
+> **Status: executed** — all ten items implemented as planned (contract
+> 0.10.0), tests green, `check --all --strict` clean on `examples/`. The one
+> remaining step is the out-of-repo follow-up in step 8 (sync pudl's bundled
+> `dlktk.cue` bootstrap schema).
+
 ## Ground rules (apply to every item)
 
 - **Layering holds.** Only `internal/store` touches pudl; `internal/af` stays
