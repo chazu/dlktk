@@ -35,6 +35,14 @@ const (
 	// the synthesis author, or every objection against it does. It tests the
 	// shape of the scrutiny, not the number of author strings it wore (warning).
 	SingleAuthorConvergence = "single_author_convergence"
+	// PrematurePreference fires when a preference was recorded before its issue
+	// carried at least two positions from at least two authors — a value call
+	// stated against a single candidate is a rubber stamp (warning).
+	PrematurePreference = "premature_preference"
+	// UnacknowledgedWarning fires when a decided issue carries another warning
+	// that its decision basis does not acknowledge — closing over a live warning
+	// unremarked. A warning is a work item, not noise (warning).
+	UnacknowledgedWarning = "unacknowledged_warning"
 	// MappedPendingGovernance is a non-fatal note (never fails a check, even
 	// under --strict): a value-map decision defers "whose ranking governs?" and
 	// that question should be raised as its own issue.
@@ -251,7 +259,164 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 			Detail: fmt.Sprintf("synthesis %s is preferred over its parent %s, but the parent's undefeated objections are not answered on the hybrid (%s) — object/support %s --answers <id>", p.Winner, p.Loser, detail, p.Winner),
 		})
 	}
+
+	// premature_preference (item 9): a preference recorded before its issue had
+	// ≥2 positions from ≥2 authors — the "no prefer until real divergence" rule
+	// made mechanically checkable from authorship + transaction time.
+	pf, err := prematurePreferences(s, g, disc)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, pf...)
+
+	// unacknowledged_warning (item 9): a decided issue whose decision closed over
+	// another live warning without naming it in the basis. Runs last, over every
+	// finding accumulated above, so a warning is a work item — resolve it before
+	// the convergent move, or record the override rationale in --basis.
+	out = append(out, unacknowledgedWarnings(disc, decs, out)...)
 	return out, nil
+}
+
+// prematurePreferences reports preferences recorded while their issue still
+// lacked two positions from two distinct authors. Positions are counted as of
+// the preference's transaction time (second-granular; a position added in the
+// same second as the preference counts, so fast honest sessions are not
+// flagged), and by their author, so a preference stated against a single
+// candidate — or a lone author talking to itself — is caught.
+func prematurePreferences(s *store.Store, g *ibis.Graph, disc string) ([]Finding, error) {
+	hist, err := s.History(disc, "")
+	if err != nil {
+		return nil, err
+	}
+	tx := map[string]int64{} // fact id -> earliest tx_start
+	for _, h := range hist {
+		if h.ID == "" {
+			continue
+		}
+		if t, ok := tx[h.ID]; !ok || h.TxStart < t {
+			tx[h.ID] = h.TxStart
+		}
+	}
+	var out []Finding
+	seen := map[string]bool{}
+	for _, p := range g.Preferences {
+		if seen[p.ID] {
+			continue
+		}
+		seen[p.ID] = true
+		issue := issueOf(g, p.Winner)
+		if issue == "" {
+			continue // a preference between arguments, not positions on an issue
+		}
+		pTx, ok := tx[p.ID]
+		authors := map[string]bool{}
+		positions := 0
+		for _, pos := range positionsOf(g, issue) {
+			if ok {
+				if posTx, has := tx[pos]; has && posTx > pTx {
+					continue // this position postdates the preference
+				}
+			}
+			positions++
+			authors[g.Nodes[pos].Author] = true
+		}
+		if positions < 2 || len(authors) < 2 {
+			out = append(out, Finding{
+				Kind: PrematurePreference, Severity: "warning", Discussion: disc, Issue: issue, Node: p.Winner,
+				Detail: fmt.Sprintf("preference %s ≻ %s was recorded before %s had two positions from two authors (%d position(s), %d author(s) by then) — a value call against a single candidate is a rubber stamp", p.Winner, p.Loser, issue, positions, len(authors)),
+			})
+		}
+	}
+	return out, nil
+}
+
+// acknowledgmentTokens maps a finding kind to substrings whose presence in a
+// decision basis counts as acknowledging it. Any universal override token
+// (below) also acknowledges any warning.
+var acknowledgmentTokens = map[string][]string{
+	UntestedDecision:        {"untested"},
+	BundleSynthesis:         {"bundle", "drop"},
+	SelfElevatedSynthesis:   {"elevat", "subsum", "inherit"},
+	DefeatedAssumption:      {"assumption", "premise"},
+	ReviewDue:               {"review", "horizon", "stale"},
+	MapDrift:                {"drift", "map"},
+	SingleAuthorConvergence: {"author", "independen", "convergence", "adversar"},
+	PrematurePreference:     {"premature", "divergen"},
+	Stalemate:               {"stalemate", "deadlock"},
+}
+
+var universalAckTokens = []string{"override", "acknowledg", "despite", "notwithstanding", "waive", "aware", "accepted", "noted"}
+
+// unacknowledgedWarnings emits one finding per decided issue that carries a
+// warning its decision basis does not acknowledge. Acknowledgment is
+// deliberately lenient — naming the finding's node, a keyword for its kind, or
+// any override token clears it — because the obligation is to *remark on* the
+// warning, not to pass a vocabulary test. (A pragmatic reading of "predates the
+// decision": the warning is live at check time on an already-decided issue.)
+func unacknowledgedWarnings(disc string, decs []ibis.Decision, found []Finding) []Finding {
+	basisByIssue := map[string]string{}
+	decided := map[string]bool{}
+	for _, d := range decs {
+		if d.Disc != disc {
+			continue
+		}
+		decided[d.Issue] = true
+		basisByIssue[d.Issue] += " " + strings.ToLower(d.Basis)
+	}
+	acknowledges := func(basis string, f Finding) bool {
+		if f.Node != "" && strings.Contains(basis, strings.ToLower(f.Node)) {
+			return true
+		}
+		for _, tok := range acknowledgmentTokens[f.Kind] {
+			if strings.Contains(basis, tok) {
+				return true
+			}
+		}
+		for _, tok := range universalAckTokens {
+			if strings.Contains(basis, tok) {
+				return true
+			}
+		}
+		return false
+	}
+	unresolved := map[string][]string{}
+	order := []string{}
+	for _, f := range found {
+		if f.Issue == "" || f.Severity != "warning" || f.Kind == UnacknowledgedWarning {
+			continue
+		}
+		if !decided[f.Issue] {
+			continue
+		}
+		if acknowledges(basisByIssue[f.Issue], f) {
+			continue
+		}
+		if _, ok := unresolved[f.Issue]; !ok {
+			order = append(order, f.Issue)
+		}
+		unresolved[f.Issue] = append(unresolved[f.Issue], f.Kind)
+	}
+	var out []Finding
+	for _, issue := range order {
+		out = append(out, Finding{
+			Kind: UnacknowledgedWarning, Severity: "warning", Discussion: disc, Issue: issue,
+			Detail: fmt.Sprintf("issue %s was decided over live warning(s) [%s] that the decision basis does not acknowledge — resolve them before deciding, or record the override rationale in --basis (name the warning or say why you proceed)", issue, strings.Join(unresolved[issue], ", ")),
+		})
+	}
+	return out
+}
+
+// positionsOf lists the positions responding to an issue.
+func positionsOf(g *ibis.Graph, issue string) []string {
+	var out []string
+	for _, l := range g.Links {
+		if l.Rel == ibis.RespondsTo && l.Dst == issue {
+			if n, ok := g.Nodes[l.Src]; ok && n.Kind == ibis.Position {
+				out = append(out, l.Src)
+			}
+		}
+	}
+	return out
 }
 
 // issueOf returns the issue a position responds to (first, if several).

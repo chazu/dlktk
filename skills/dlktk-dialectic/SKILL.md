@@ -251,10 +251,16 @@ objections); or a move budget runs out.
   (`defeated_assumption`), a hybrid preferred over a parent whose objections
   it never answered (`self_elevated_synthesis`), a decided ≥3-parent synthesis
   with no recorded drops (`bundle_synthesis`), a mapped issue whose audience map
-  has drifted (`map_drift`), and a decided synthesis scrutinised or decided only
-  within its own author (`single_author_convergence`). The note
-  `mapped_pending_governance` (never fatal) flags a mapped issue whose
+  has drifted (`map_drift`), a decided synthesis scrutinised or decided only
+  within its own author (`single_author_convergence`), a preference made before
+  two authors staked positions (`premature_preference`), and an issue decided
+  over a warning its basis never acknowledged (`unacknowledged_warning`). The
+  note `mapped_pending_governance` (never fatal) flags a mapped issue whose
   governance question is still unraised.
+- **A warning is a work item.** Before any convergent move (`prefer`/`decide`/
+  `supersede`), clear the warnings on that issue — or, if you proceed anyway,
+  name them in `--basis` (the finding kind, or an override rationale). Closing
+  over an unacknowledged warning draws `unacknowledged_warning`.
 
 ## Postmortem
 

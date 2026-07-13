@@ -271,8 +271,19 @@ exploration reads.
   (`self_elevated_synthesis` — current-graph: a conceded address re-arms it),
   a decided ≥3-parent synthesis with no recorded drops (`bundle_synthesis`),
   a mapped issue whose audience map has drifted since it was decided
-  (`map_drift`), and a decided synthesis whose scrutiny or decision never left
+  (`map_drift`), a decided synthesis whose scrutiny or decision never left
   its own author (`single_author_convergence` — the decider shares its author,
-  or every objector does). The non-fatal note `mapped_pending_governance`
+  or every objector does), a preference recorded before its issue had two
+  positions from two authors (`premature_preference`), and an issue decided
+  over another live warning its basis never acknowledged
+  (`unacknowledged_warning`). The non-fatal note `mapped_pending_governance`
   reminds you to raise a mapped issue's governance question; it never fails a
   check.
+- **A warning is a work item, not noise.** A move-result warning or a strict
+  finding on an issue obligates the loop: resolve it before the next convergent
+  move (`prefer`/`decide`/`supersede` on that issue), or record the override
+  rationale in that move's `--basis` — name the warning or say why you proceed.
+  Deciding over a warning your basis never mentions draws
+  `unacknowledged_warning`. This is the precedent the first exercise set and
+  arc two exists to break: `untested_decision` fired and the session closed
+  over it, unremarked.

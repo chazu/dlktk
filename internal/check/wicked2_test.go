@@ -32,9 +32,14 @@ func TestUntestedDecisionIgnoresRivalAttacks(t *testing.T) {
 	if err := m.Decide("d", issue, h, "unique justified", 0); err != nil {
 		t.Fatal(err)
 	}
-	f := only(t, run(t, s), UntestedDecision, "warning")
-	if f.Node != h {
-		t.Fatalf("finding must name the hybrid: %+v", f)
+	v := run(t, s)
+	if findKind(v, UntestedDecision) != 1 {
+		t.Fatalf("want exactly one untested_decision: %+v", v)
+	}
+	for _, f := range v.Findings {
+		if f.Kind == UntestedDecision && f.Node != h {
+			t.Fatalf("finding must name the hybrid: %+v", f)
+		}
 	}
 }
 
