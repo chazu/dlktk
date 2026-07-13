@@ -10,7 +10,13 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.16.0 makes warnings obligate something
+// Version of the dlktk contract. 0.17.0 is the arc-two repairs
+// (wicked-problems-2.md item 10): roster reports one row per distinct
+// (author, role) binding rather than one per move, show renders reframe lineage
+// from both sides (reframed_to on the dead framing, reframed_from on the new
+// one) and a value-map decision, and the skill declares a minimum contract
+// version it checks via `discover` at session start. 0.16.0 makes warnings
+// obligate something
 // (wicked-problems-2.md item 9): unacknowledged_warning fires when a decided
 // issue closed over another live warning that its basis does not acknowledge
 // (resolve it before the convergent move, or name the override rationale in
@@ -72,7 +78,7 @@ import (
 // drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
 // supersede move (bare re-decide rejected, design §16 Q4) and
 // decided.supersedes.
-const Version = "0.16.0"
+const Version = "0.17.0"
 
 // Move describes a state-mutating command.
 type Move struct {

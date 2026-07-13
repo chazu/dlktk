@@ -38,8 +38,26 @@ If you just need a fact lookup or a quick opinion, this is overkill.
 
 ## Setup
 
+**Version handshake (mandatory first move).** This skill assumes contract
+version **0.17.0 or later** (`MIN_CONTRACT` below). Run `dlktk discover` first
+and read its `version`:
+
 ```
 dlktk discover --format json     # the full contract: moves, reads, flags, exit codes
+```
+
+- If `version` ≥ `0.17.0`, proceed.
+- If `version` < `0.17.0`, **stop and warn the user visibly**: the installed
+  `dlktk` predates the playbook this skill teaches (rival-aware tested-ness,
+  synthesis discipline, value-map closure, the warnings-are-work-items rule).
+  Continuing would run a stale playbook against a newer engine or vice-versa —
+  the exact failure the handshake exists to catch. Ask them to rebuild/upgrade
+  `dlktk` before continuing.
+
+The agent that loads this skill is the checker — this works on machines a
+`make` never touched. `MIN_CONTRACT = 0.17.0`.
+
+```
 dlktk new "<title>" --subject "q:<the question>"   # creates + selects a discussion
 ```
 

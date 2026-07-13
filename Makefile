@@ -16,7 +16,10 @@ else
 CODESIGN := true
 endif
 
-.PHONY: build install sign verify clean test
+SKILL_SRC := skills/dlktk-dialectic
+SKILL_DEST := $(HOME)/.claude/skills/dlktk-dialectic
+
+.PHONY: build install install-skill sign verify clean test
 
 ## build: compile + ad-hoc sign the local binary
 build:
@@ -36,6 +39,14 @@ sign:
 ## verify: check the installed binary's signature
 verify:
 	codesign --verify --verbose $(INSTALL_PATH)
+
+## install-skill: sync the repo dialectic skill into ~/.claude/skills. A
+## convenience only — the guarantee is the skill's version handshake at session
+## start (it checks the running contract), not this copy.
+install-skill:
+	mkdir -p $(SKILL_DEST)
+	cp -R $(SKILL_SRC)/ $(SKILL_DEST)/
+	@echo "synced skill: $(SKILL_DEST)"
 
 ## test: run the test suite
 test:

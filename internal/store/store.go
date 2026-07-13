@@ -218,14 +218,27 @@ func (s *Store) Audiences(disc string, w When) ([]ibis.Audience, error) {
 	return filter(all, disc, func(a ibis.Audience) string { return a.Disc }), err
 }
 
-// Rosters returns the author↔role bindings recorded for a discussion, in
-// canonical (author, role) order so output is deterministic.
+// Rosters returns the distinct author↔role bindings recorded for a discussion,
+// in canonical (author, role) order so output is deterministic. Every move
+// under a role re-records the binding, so the raw facts hold one row per move;
+// this collapses them to one row per binding — the roster is the attribution
+// audit, not a move log (wicked-problems-2.md item 10).
 func (s *Store) Rosters(disc string, w When) ([]ibis.Roster, error) {
 	all, err := scan[ibis.Roster](s, relRoster, w)
 	if err != nil {
 		return nil, err
 	}
-	out := filter(all, disc, func(r ibis.Roster) string { return r.Disc })
+	filtered := filter(all, disc, func(r ibis.Roster) string { return r.Disc })
+	seen := map[[2]string]bool{}
+	out := filtered[:0]
+	for _, r := range filtered {
+		key := [2]string{r.Author, r.Role}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, r)
+	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Author != out[j].Author {
 			return out[i].Author < out[j].Author

@@ -53,6 +53,18 @@ func Show(g *ibis.Graph, labels map[string]af.Label, node string, decs []ibis.De
 			v.Links = append(v.Links, linkView(g, labels, l.Rel, "in", l.Src))
 		}
 	}
+	// Reframe lineage lives outside g.Links, so show it explicitly from both
+	// sides: reframed_to on the dead framing (as tree shows) and reframed_from
+	// on the new framing — the side that was invisible before
+	// (wicked-problems-2.md item 10).
+	for _, r := range g.Reframes {
+		if r.Old == node {
+			v.Links = append(v.Links, linkView(g, labels, "reframed_to", "out", r.New))
+		}
+		if r.New == node {
+			v.Links = append(v.Links, linkView(g, labels, "reframed_from", "in", r.Old))
+		}
+	}
 	sort.Slice(v.Links, func(i, j int) bool {
 		a, b := v.Links[i], v.Links[j]
 		if a.Dir != b.Dir {
@@ -66,7 +78,7 @@ func Show(g *ibis.Graph, labels map[string]af.Label, node string, decs []ibis.De
 	if n.Kind == ibis.Issue {
 		for _, d := range decs {
 			if d.Issue == node {
-				v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy}
+				v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy, Kind: d.Kind, SupersededKind: d.SupersededKind}
 			}
 		}
 	}
@@ -121,13 +133,17 @@ func ShowText(v NodeView) string {
 	}
 	if d := v.Decided; d != nil {
 		flag := ""
-		if d.Override {
-			flag += cDim(" (OVERRIDE)")
-		}
 		if d.Supersedes != "" {
 			flag += cDim(fmt.Sprintf(" (supersedes %s)", d.Supersedes))
 		}
-		fmt.Fprintf(&b, "  %s %s  %s%s\n", labelColor("IN", "✓ decided:"), pid(d.Position), cDim("by "+d.Decider), flag)
+		if d.Kind == ibis.MapDecision {
+			fmt.Fprintf(&b, "  %s  %s%s\n", labelColor("UNDEC", "◆ closed as value-map:"), cDim("by "+d.Decider), flag)
+		} else {
+			if d.Override {
+				flag += cDim(" (OVERRIDE)")
+			}
+			fmt.Fprintf(&b, "  %s %s  %s%s\n", labelColor("IN", "✓ decided:"), pid(d.Position), cDim("by "+d.Decider), flag)
+		}
 	}
 	return b.String()
 }
