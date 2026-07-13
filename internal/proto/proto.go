@@ -439,6 +439,71 @@ func validReviewBy(issue string, reviewBy int64) error {
 	return nil
 }
 
+// DecideMap closes a value-driven issue honestly without a single winner: the
+// decision's object is the issue's audience-conditional verdict map rather than
+// a position (wicked-problems-2.md item 7). It is available only when there is a
+// real map to record — at least two declared audiences and at least one
+// position whose verdict differs across them — so it cannot become a universal
+// stalemate silencer; --review-by is mandatory so the deferral expires on a
+// clock; and the map is recomputed by `check` (map_drift), never frozen.
+func (m *Mover) DecideMap(disc, issue, basis string, reviewBy int64) error {
+	if reviewBy == 0 {
+		return &ibis.IllegalMove{Node: issue,
+			Detail: "a map decision requires --review-by: a deferred value conflict must carry an expiry, not stand indefinitely"}
+	}
+	if err := validReviewBy(issue, reviewBy); err != nil {
+		return err
+	}
+	return m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
+		g, err := s.Graph(disc, store.Now())
+		if err != nil {
+			return err
+		}
+		if err := validMapTarget(g, issue); err != nil {
+			return err
+		}
+		if prior, err := standingDecision(s, disc, issue); err != nil {
+			return err
+		} else if prior != nil {
+			return &ibis.IllegalMove{Node: issue,
+				Detail: fmt.Sprintf("issue %s is already decided; use `supersede %s --map --basis <label> --review-by <T>` to convert it", issue, issue)}
+		}
+		return s.AddDecision(ibis.Decision{
+			Disc: disc, Issue: issue, Basis: basis, Kind: ibis.MapDecision,
+			Decider: m.author, ReviewBy: reviewBy,
+		})
+	})
+}
+
+// validMapTarget enforces the map precondition: the issue must exist, be a
+// select_one issue (open issues close per position), and be audience-sensitive
+// right now.
+func validMapTarget(g *ibis.Graph, issue string) error {
+	n, ok := g.Nodes[issue]
+	if !ok {
+		return &ibis.IllegalMove{Node: issue, Detail: fmt.Sprintf("map issue %q not found", issue)}
+	}
+	if n.Kind != ibis.Issue {
+		return &ibis.IllegalMove{Node: issue, Detail: fmt.Sprintf("map target must be an issue, got %s", n.Kind)}
+	}
+	if g.IssueCards[issue] == ibis.Open {
+		return &ibis.IllegalMove{Node: issue,
+			Detail: "map closure is for select_one value-driven issues; an open issue already closes per position"}
+	}
+	_, sensitive, err := render.IssueMap(g, issue)
+	if err != nil {
+		return err
+	}
+	if !sensitive {
+		return &ibis.IllegalMove{Node: issue,
+			Detail: "no map to record: a map decision needs >=2 declared audiences and >=1 position whose verdict differs across them — otherwise decide a position or keep arguing"}
+	}
+	return nil
+}
+
 // Supersede overturns the standing decision on an issue with a new one. The
 // basis is mandatory — the whole point of the move is forcing the reasoning for
 // the reversal to be captured — and the new decision links the position it
@@ -505,7 +570,52 @@ func (m *Mover) Supersede(disc, issue, position, basis string, reviewBy int64) e
 		return s.AddDecision(ibis.Decision{
 			Disc: disc, Issue: issue, Position: position, Basis: basis,
 			Decider: m.author, Override: labels[position] != af.IN,
-			Supersedes: prior.Position, ReviewBy: reviewBy,
+			Supersedes: prior.Position, SupersededKind: prior.Kind, ReviewBy: reviewBy,
+		})
+	})
+}
+
+// SupersedeMap overturns the standing decision on an issue with a value-map
+// decision (position->map when the contest turns out to be value-driven, or
+// map->map to re-affirm on a fresh horizon). The superseded decision's kind is
+// recorded so the transition is legible (wicked-problems-2.md item 7).
+func (m *Mover) SupersedeMap(disc, issue, basis string, reviewBy int64) error {
+	if basis == "" {
+		return &ibis.IllegalMove{Node: issue,
+			Detail: "supersede requires --basis: record why the prior decision is overturned"}
+	}
+	if reviewBy == 0 {
+		return &ibis.IllegalMove{Node: issue,
+			Detail: "a map decision requires --review-by: a deferred value conflict must carry an expiry"}
+	}
+	if err := validReviewBy(issue, reviewBy); err != nil {
+		return err
+	}
+	return m.s.Move(func(s *store.Store) error {
+		if err := m.ensureRoster(s, disc); err != nil {
+			return err
+		}
+		g, err := s.Graph(disc, store.Now())
+		if err != nil {
+			return err
+		}
+		if err := validMapTarget(g, issue); err != nil {
+			return err
+		}
+		prior, err := standingDecision(s, disc, issue)
+		if err != nil {
+			return err
+		}
+		if prior == nil {
+			return &ibis.IllegalMove{Node: issue,
+				Detail: fmt.Sprintf("issue %s has no standing decision to supersede; use `decide %s --map`", issue, issue)}
+		}
+		if err := s.SupersedeDecision(disc, issue, ""); err != nil {
+			return err
+		}
+		return s.AddDecision(ibis.Decision{
+			Disc: disc, Issue: issue, Basis: basis, Kind: ibis.MapDecision,
+			Decider: m.author, Supersedes: prior.Position, SupersededKind: prior.Kind, ReviewBy: reviewBy,
 		})
 	})
 }

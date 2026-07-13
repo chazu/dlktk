@@ -184,6 +184,16 @@ contest.
   rankings with `audience <name> <v1> <v2>…`; read the conflict with
   `audiences` and `status --under <name>`. Robust-across-audiences is the
   strongest justification a wicked question admits.
+- **If nothing is robust, the map is the deliverable.** When the real decision
+  is *whose values govern*, close honestly without a winner:
+  `decide <issue> --map --basis <label> --review-by <T>` records the audience-
+  conditional map as the outcome. Legal only when the issue is audience-
+  sensitive right now (≥2 audiences, ≥1 position whose verdict differs);
+  `--review-by` is mandatory; `check` reports `map_drift` if the map later
+  changes (verdicts are never frozen). Then `raise "whose ranking governs?"
+  --from <a position>` — until you do, `check` carries the non-fatal note
+  `mapped_pending_governance`. Convert to a winner or re-affirm via `supersede`
+  (`--map` to stay a map); the superseded kind is recorded.
 - **Decisions are closing acts — provisionally.** On a `select_one` issue,
   `decide <issue> <position>` is rejected once the issue is decided; overturning
   goes through `supersede <issue> <position> --basis <label>`, which records

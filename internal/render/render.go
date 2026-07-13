@@ -56,14 +56,17 @@ type PositionView struct {
 	Untested   bool     `json:"untested,omitempty"`
 }
 
-// DecidedView is the standing decision on an issue, if any.
+// DecidedView is the standing decision on an issue, if any. A map decision has
+// an empty Position (its object is the issue's audience map) and Kind "map".
 type DecidedView struct {
-	Position   string `json:"position"`
-	Basis      string `json:"basis,omitempty"`
-	Decider    string `json:"decider"`
-	Override   bool   `json:"override"`
-	Supersedes string `json:"supersedes,omitempty"`
-	ReviewBy   int64  `json:"review_by,omitempty"`
+	Position       string `json:"position,omitempty"`
+	Basis          string `json:"basis,omitempty"`
+	Decider        string `json:"decider"`
+	Override       bool   `json:"override"`
+	Supersedes     string `json:"supersedes,omitempty"`
+	ReviewBy       int64  `json:"review_by,omitempty"`
+	Kind           string `json:"kind,omitempty"`
+	SupersededKind string `json:"superseded_kind,omitempty"`
 }
 
 // IssueStatus is the status envelope for one issue (design §8.3).
@@ -77,8 +80,9 @@ type IssueStatus struct {
 	Stalemate   bool           `json:"stalemate"`
 	Advice      string         `json:"advice"`
 	ReframedTo  string         `json:"reframed_to,omitempty"` // this framing was replaced
-	Decided     *DecidedView   `json:"decided,omitempty"`     // the single standing decision (select_one)
-	Decisions   []DecidedView  `json:"decisions,omitempty"`   // every standing decision (open cardinality records one per position)
+	Decided     *DecidedView   `json:"decided,omitempty"`     // the single standing position decision (select_one)
+	Decisions   []DecidedView  `json:"decisions,omitempty"`   // every standing position decision (open cardinality records one per position)
+	MapDecided  *DecidedView   `json:"map_decided,omitempty"` // a value-map decision closing the issue without a single winner
 }
 
 // Status computes the status of one issue. decs are the in-force decisions at
@@ -126,20 +130,29 @@ func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue s
 	if to, ok := g.ReframedTo(issue); ok {
 		st.ReframedTo = to
 	}
-	st.Stalemate = isStalemate(st)
-	st.Advice = advise(st)
 	// An open issue records a standing decision per position (multiple winners
 	// that compose); a select_one issue has at most one. Decisions holds every
-	// standing decision; Decided points at the sole one for select_one, so
-	// existing single-decision consumers are unchanged.
+	// standing position decision; Decided points at the sole one for select_one,
+	// so existing single-decision consumers are unchanged. A map decision closes
+	// the issue without a single winner and lands in MapDecided.
 	for _, d := range decs {
-		if d.Issue == issue {
-			st.Decisions = append(st.Decisions, DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy})
+		if d.Issue != issue {
+			continue
 		}
+		dv := DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy, Kind: d.Kind, SupersededKind: d.SupersededKind}
+		if d.Kind == ibis.MapDecision {
+			m := dv
+			st.MapDecided = &m
+			continue
+		}
+		st.Decisions = append(st.Decisions, dv)
 	}
 	if card != string(ibis.Open) && len(st.Decisions) > 0 {
 		st.Decided = &st.Decisions[len(st.Decisions)-1]
 	}
+	// A mapped issue is closed: its verdict is the map, not a stalemate.
+	st.Stalemate = isStalemate(st) && st.MapDecided == nil
+	st.Advice = advise(st)
 	return st
 }
 
@@ -159,7 +172,18 @@ func isStalemate(st IssueStatus) bool {
 	return true
 }
 
+// decisionKindLabel names a decision kind for human output.
+func decisionKindLabel(kind string) string {
+	if kind == ibis.MapDecision {
+		return "value-map"
+	}
+	return "position"
+}
+
 func advise(st IssueStatus) string {
+	if st.MapDecided != nil {
+		return "closed as a value-map — nothing is robust; the outcome is whose ranking governs (raise that as a governance issue if you have not)"
+	}
 	var in, undec []string
 	for _, p := range st.Positions {
 		switch p.Label {
@@ -238,6 +262,14 @@ func StatusText(st IssueStatus) string {
 			fmt.Fprintf(&b, "  %s", quote(ptext))
 		}
 		fmt.Fprintf(&b, "  %s%s\n", cDim("by "+d.Decider), flag)
+	}
+	if d := st.MapDecided; d != nil {
+		flag := ""
+		if d.SupersededKind != "" {
+			flag = cDim(fmt.Sprintf(" (superseded a %s decision)", decisionKindLabel(d.SupersededKind)))
+		}
+		fmt.Fprintf(&b, "  %s  %s%s\n", labelColor("UNDEC", "◆ closed as value-map"),
+			cDim("by "+d.Decider+" — the outcome is the audience-conditional map, not a single winner; `audiences` shows it"), flag)
 	}
 	fmt.Fprintf(&b, "  %s %s\n", cBold("→"), st.Advice)
 	return b.String()

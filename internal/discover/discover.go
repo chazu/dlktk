@@ -10,7 +10,18 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.13.0 opens the closure story for
+// Version of the dlktk contract. 0.14.0 adds value-map closure
+// (wicked-problems-2.md item 7): `decide <issue> --map --review-by T` closes a
+// value-driven issue with its audience-conditional map instead of a single
+// winner — legal only when the issue is audience-sensitive right now (>=2
+// declared audiences, >=1 position whose verdict differs across them) and only
+// with a mandatory review horizon. Verdicts are not snapshotted; check derives
+// the decision-time map bitemporally and reports map_drift when the current map
+// differs, review_due when the horizon passes, and the non-fatal note
+// mapped_pending_governance until the deferred "whose ranking governs?"
+// question is raised as its own issue. supersede --map / supersede to a
+// position convert between the two kinds, recording the superseded kind. Bare
+// YYYY-MM-DD review horizons are accepted. 0.13.0 opens the closure story for
 // open-cardinality issues (wicked-problems-2.md item 6): decide records a
 // standing decision per position (the winners compose, so a repeat decide is
 // rejected only on the same position), supersede targets the decision on a
@@ -49,7 +60,7 @@ import (
 // drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
 // supersede move (bare re-decide rejected, design §16 Q4) and
 // decided.supersedes.
-const Version = "0.13.0"
+const Version = "0.14.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -128,8 +139,8 @@ func Current() Schema {
 			{"prefer", []string{"winner", "loser", "--basis label"}, "AF nodes; no preference cycle; result warns (self-elevated synthesis) when the winner subsumes the loser without answering its objections", true},
 			{"promote", []string{"node", "value"}, "AF node owned by the author; one value per node (to change, concede and restate)", true},
 			{"audience", []string{"name", "value...", "[--supersede --basis label]"}, "at least two distinct values, most important first; re-declaring a name requires --supersede with a basis", true},
-			{"decide", []string{"issue", "position", "[--basis label]", "[--review-by T]"}, "position responds_to issue; select_one: issue not already decided (overturn via supersede); open: one standing decision per position — the winners compose — so a repeat decide is rejected only on the same position; review-by must be in the future", true},
-			{"supersede", []string{"issue", "position", "--basis label", "[--review-by T]"}, "basis required; select_one: replaces the issue's single decision; open: revises the standing decision on <position> (siblings stand); new decision links the prior position", true},
+			{"decide", []string{"issue", "position", "[--basis label]", "[--review-by T]", "[--map]"}, "position responds_to issue; select_one: issue not already decided (overturn via supersede); open: one standing decision per position — the winners compose — so a repeat decide is rejected only on the same position; --map (no position) closes the issue as its audience-conditional map — legal only with >=2 declared audiences and >=1 position whose verdict differs across them, --review-by then mandatory; review-by must be in the future", true},
+			{"supersede", []string{"issue", "position", "--basis label", "[--review-by T]", "[--map]"}, "basis required; select_one: replaces the issue's single decision; open: revises the standing decision on <position> (siblings stand); --map (no position) converts the issue to a value-map (same map preconditions, --review-by mandatory); new decision records the superseded decision's kind", true},
 			{"concede", []string{"node"}, "author (identity, not persona) owns the node", true},
 			{"retract", []string{"node"}, "author (identity, not persona) owns the node", true},
 			{"roster", []string{"[author]", "[role]"}, "no args lists bindings; author+role pre-declares one (moves auto-record otherwise)", true},
@@ -162,7 +173,7 @@ func Current() Schema {
 		},
 		ErrorEnvelope: "{error: kind, detail: string, node?: id}",
 		Envelopes: map[string]string{
-			"IssueStatus":       "{issue, issue_text, cardinality, under?, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool, untested?: bool}], undecided: [id], stalemate: bool, advice, reframed_to?, decided?: {position, basis, decider, override, supersedes?, review_by?} (select_one), decisions?: [{position, basis, decider, override, supersedes?, review_by?}] (all standing decisions; open issues record one per position)}",
+			"IssueStatus":       "{issue, issue_text, cardinality, under?, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool, untested?: bool}], undecided: [id], stalemate: bool, advice, reframed_to?, decided?: {position, basis, decider, override, supersedes?, review_by?} (select_one), decisions?: [{position, basis, decider, override, supersedes?, review_by?}] (all standing decisions; open issues record one per position), map_decided?: {basis, decider, review_by, kind: map, superseded_kind?} (issue closed as a value-map, no single winner)}",
 			"AgendaView":        "{undecided: [{id, kind, text, label}], ready: [{issue, text, position, position_text}], unpopulated: [{issue, text}], untested: [{issue, text, position, position_text}], assumptions: [{id, kind, text, label}]}",
 			"MovesView":         "{issue, moves: [{move, args: [string], effect}]}",
 			"WhyView":           "{node, text, label, because: [{attacker, attacker_text, attacker_label, reason}], inherited_questions?: [InheritedQuestion], to_flip: [{move, args: [string], effect}]}",
@@ -176,7 +187,7 @@ func Current() Schema {
 			"WorldsView":        "{issue, under?, worlds: [{in: [{id, kind, text, label}], distinguishing: [id]}], robust: [ref], contingent: [ref], hopeless: [ref], too_contested?: bool, note?}",
 			"AudiencesView":     "{audiences: [{name, ranking: [value], author?}], issues: [{issue, text, baseline: {position: label}, by_audience: {name: {position: label}}, robust: [id], sensitive: [{position, text, verdicts: {audience|baseline: label}}]}]}",
 			"Audience":          "{disc, name, ranking: [value], basis?, author}",
-			"CheckView":         "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate|untested_decision|review_due|defeated_assumption|self_elevated_synthesis|bundle_synthesis, severity: error|warning, discussion, issue?, node?, detail}], ok: bool}",
+			"CheckView":         "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate|untested_decision|review_due|defeated_assumption|self_elevated_synthesis|bundle_synthesis|map_drift|mapped_pending_governance, severity: error|warning|note, discussion, issue?, node?, detail}], ok: bool}",
 			"Discussion":        "{id, title, subject, created_by}",
 			"RosterView":        "{discussion, bindings: [{disc, author, role}]}",
 		},

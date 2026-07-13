@@ -118,6 +118,53 @@ func Audiences(g *ibis.Graph) (AudiencesView, error) {
 	return v, nil
 }
 
+// IssueMap computes one issue's audience-conditional verdict map: every
+// position's label under baseline and under each declared audience, in a
+// deterministic canonical string. sensitive reports whether the issue is
+// audience-sensitive *right now* — at least two declared audiences and at least
+// one position whose verdict differs across them (or from baseline) — which is
+// the precondition for closing the issue with a value-map decision
+// (wicked-problems-2.md item 7). The canonical string is what map_drift
+// compares across time; no verdicts are stored, so it is recomputed on demand.
+func IssueMap(g *ibis.Graph, issue string) (canonical string, sensitive bool, err error) {
+	names := make([]string, 0, len(g.Audiences))
+	for name := range g.Audiences {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	baseFw, err := af.Build(g)
+	if err != nil {
+		return "", false, err
+	}
+	baseline := baseFw.Grounded()
+	byAudience := map[string]map[string]af.Label{}
+	for _, name := range names {
+		fw, e := af.BuildUnder(g, g.Audiences[name])
+		if e != nil {
+			return "", false, e
+		}
+		byAudience[name] = fw.Grounded()
+	}
+
+	positions := positionsFor(g, issue)
+	sort.Strings(positions)
+	var b strings.Builder
+	differs := false
+	for _, p := range positions {
+		fmt.Fprintf(&b, "%s:baseline=%s", p, baseline[p])
+		for _, name := range names {
+			l := byAudience[name][p]
+			fmt.Fprintf(&b, ",%s=%s", name, l)
+			if l != baseline[p] {
+				differs = true
+			}
+		}
+		b.WriteByte(';')
+	}
+	return b.String(), len(names) >= 2 && differs, nil
+}
+
 // AudiencesText renders an AudiencesView.
 func AudiencesText(v AudiencesView) string {
 	var b strings.Builder

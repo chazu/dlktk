@@ -157,6 +157,20 @@ on its own.
 - `status --under ops` evaluates under that ranking; `audiences` reports which
   conclusions survive every ranking. Robust-across-audiences is the closest
   thing a wicked problem has to objective justification.
+- **When nothing is robust, the map *is* the answer — record it, don't force a
+  winner.** If the real decision is *whose values govern*, close the issue with
+  `decide <issue> --map --basis <label> --review-by <T>`: the outcome is the
+  audience-conditional map, not a single position. Guardrails keep this honest,
+  not a stalemate silencer — it is legal only when the issue is audience-
+  sensitive *right now* (≥2 declared audiences and ≥1 position whose verdict
+  differs across them), `--review-by` is mandatory (the deferral expires on a
+  clock), and `check` recomputes the map and reports `map_drift` if it has
+  changed since — no verdicts are frozen. A mapped issue also carries the
+  non-fatal note `mapped_pending_governance` until you `raise` the governance
+  question ("whose ranking should govern?") `--from` one of its positions —
+  naming the value conflict as its own issue is the honest follow-up. Convert
+  back to a winner (or re-affirm on a fresh horizon) with `supersede` — the
+  superseded decision's kind is recorded.
 
 ## Move discipline
 

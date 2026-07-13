@@ -29,6 +29,11 @@ const (
 	DefeatedAssumption    = "defeated_assumption"     // decided position rests on an OUT assumption (warning)
 	SelfElevatedSynthesis = "self_elevated_synthesis" // hybrid preferred over a parent whose objections it never answered (warning)
 	BundleSynthesis       = "bundle_synthesis"        // decided ≥3-parent synthesis with no recorded drops (warning)
+	MapDrift              = "map_drift"               // a mapped issue's current audience map differs from its decision-time map (warning)
+	// MappedPendingGovernance is a non-fatal note (never fails a check, even
+	// under --strict): a value-map decision defers "whose ranking governs?" and
+	// that question should be raised as its own issue.
+	MappedPendingGovernance = "mapped_pending_governance"
 )
 
 // Finding is one problem (or warning) detected in a discussion.
@@ -179,11 +184,17 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 		}
 		if st.Stalemate && st.ReframedTo == "" {
 			// A stalemate under a reframed (dead) framing is no longer the
-			// live question; only current framings warrant the warning.
+			// live question; only current framings warrant the warning. A mapped
+			// issue is closed (st.Stalemate is already false there).
 			out = append(out, Finding{
 				Kind: Stalemate, Severity: "warning", Discussion: disc, Issue: issue,
 				Detail: fmt.Sprintf("all %d positions UNDEC; a preference is needed to resolve", len(st.Positions)),
 			})
+		}
+		// A value-map decision records no verdicts; its object is derived. Verify
+		// it still stands as a living constraint (wicked-problems-2.md item 7).
+		if md := st.MapDecided; md != nil {
+			out = append(out, mapFindings(s, g, disc, issue, md, nowUnix)...)
 		}
 	}
 
@@ -256,8 +267,11 @@ func Text(v View) string {
 	fmt.Fprintf(&b, "checked %d discussion(s): %d finding(s)\n", v.Discussions, len(v.Findings))
 	for _, f := range v.Findings {
 		sev := "WARN "
-		if f.Severity == "error" {
+		switch f.Severity {
+		case "error":
 			sev = "ERROR"
+		case "note":
+			sev = "NOTE "
 		}
 		loc := f.Discussion
 		if f.Issue != "" {
@@ -274,6 +288,60 @@ func Text(v View) string {
 		b.WriteString("✗ check failed\n")
 	}
 	return b.String()
+}
+
+// mapFindings verifies a standing value-map decision: map drift (the current
+// audience map differs from the one derived as of the decision's transaction
+// time), the review horizon, and the standing residue that the deferred
+// governance question has not yet been raised.
+func mapFindings(s *store.Store, g *ibis.Graph, disc, issue string, md *render.DecidedView, nowUnix int64) []Finding {
+	var out []Finding
+	cur, _, err := render.IssueMap(g, issue)
+	if err == nil {
+		if tx, ok, e := s.DecisionTxStart(disc, issue); e == nil && ok {
+			if gAt, e := s.Graph(disc, store.When{Tx: &tx}); e == nil {
+				if was, _, e := render.IssueMap(gAt, issue); e == nil && was != cur {
+					out = append(out, Finding{
+						Kind: MapDrift, Severity: "warning", Discussion: disc, Issue: issue,
+						Detail: "the audience-conditional map has changed since the decision was recorded (a verdict flipped, an audience was superseded, or a robust winner emerged); re-affirm or convert to a position via `supersede`",
+					})
+				}
+			}
+		}
+	}
+	if md.ReviewBy != 0 && md.ReviewBy < nowUnix {
+		out = append(out, Finding{
+			Kind: ReviewDue, Severity: "warning", Discussion: disc, Issue: issue,
+			Detail: fmt.Sprintf("value-map decision on %s is past its review horizon (%s); re-affirm or revise via supersede", issue, time.Unix(md.ReviewBy, 0).UTC().Format("2006-01-02")),
+		})
+	}
+	if !hasGovernanceIssue(g, issue) {
+		out = append(out, Finding{
+			Kind: MappedPendingGovernance, Severity: "note", Discussion: disc, Issue: issue,
+			Detail: "this issue is closed as a value-map but the governance question it defers (\"whose ranking should govern?\") has not been raised as its own issue — raise it with `raise \"...\" --from <this issue or a position>`",
+		})
+	}
+	return out
+}
+
+// hasGovernanceIssue reports whether some issue was raised (raise --from) from
+// the mapped issue or one of its positions — the honest follow-up to a value
+// map, naming the deferred value conflict as its own question.
+func hasGovernanceIssue(g *ibis.Graph, issue string) bool {
+	from := map[string]bool{issue: true}
+	for _, l := range g.Links {
+		if l.Rel == ibis.RespondsTo && l.Dst == issue {
+			from[l.Src] = true
+		}
+	}
+	for _, l := range g.Links {
+		if l.Rel == ibis.RaisedFrom && from[l.Dst] {
+			if n, ok := g.Nodes[l.Src]; ok && n.Kind == ibis.Issue {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func sortedKeys(m map[string]int) []string {

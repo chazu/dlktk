@@ -281,6 +281,28 @@ func (s *Store) Graph(disc string, w When) (*ibis.Graph, error) {
 
 // SupersedeDecision invalidates (closes the vt interval of) any current decision
 // on the given issue, so a fresh decide supersedes it. No-op if none stands.
+// DecisionTxStart returns the transaction time at which the current standing
+// decision on an issue was recorded, for bitemporally deriving the state as of
+// that moment (a map decision's decision-time verdict map is computed as of
+// this time rather than snapshotted; wicked-problems-2.md item 7). ok is false
+// when the issue carries no standing decision.
+func (s *Store) DecisionTxStart(disc, issue string) (int64, bool, error) {
+	facts, err := s.ops.QueryFacts(factstore.FactFilter{Relation: relDecision})
+	if err != nil {
+		return 0, false, fail.Store("query decisions: %v", err)
+	}
+	for _, f := range facts {
+		var d ibis.Decision
+		if err := json.Unmarshal([]byte(f.Args), &d); err != nil {
+			continue
+		}
+		if d.Disc == disc && d.Issue == issue {
+			return f.TxStart, true, nil
+		}
+	}
+	return 0, false, nil
+}
+
 // SupersedeDecision closes the tt interval of the standing decision(s) on an
 // issue. A non-empty position closes only the decision on that position — the
 // unit of supersession on an open issue, where sibling per-position decisions

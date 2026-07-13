@@ -80,13 +80,27 @@ type Preference struct {
 type Decision struct {
 	Disc       string `json:"disc"`
 	Issue      string `json:"issue"`
-	Position   string `json:"position"`
+	Position   string `json:"position"` // empty for a map decision (the object is the whole issue's audience map)
 	Basis      string `json:"basis"`
 	Decider    string `json:"decider"`
 	Override   bool   `json:"override"`
 	Supersedes string `json:"supersedes,omitempty"`
 	ReviewBy   int64  `json:"review_by,omitempty"` // unix seconds; the recorded re-examination horizon (0 = none)
+	// Kind distinguishes a conventional position decision (empty/"position")
+	// from a "map" decision, whose object is the issue's audience-conditional
+	// verdict map rather than a single winner (wicked-problems-2.md item 7). A
+	// map decision snapshots no verdicts — the decision-time map is derived
+	// bitemporally as of this fact's transaction time.
+	Kind string `json:"kind,omitempty"`
+	// SupersededKind records the kind of the decision this one overturned, so a
+	// map->position or position->map transition is legible on the record.
+	SupersededKind string `json:"superseded_kind,omitempty"`
 }
+
+// Decision kinds. The empty string is a conventional position decision.
+const (
+	MapDecision = "map"
+)
 
 // Reframe records that Old's framing was replaced by New, and why. The old
 // issue's graph is untouched (append-only ethos) but it leaves the live agenda:

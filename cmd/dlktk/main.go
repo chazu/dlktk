@@ -117,10 +117,17 @@ func parseTime(flag, val string) (*int64, error) {
 		u := t.Unix()
 		return &u, nil
 	}
+	// Accept the bare date `check` prints for review horizons (YYYY-MM-DD),
+	// interpreted as that day's start in UTC, so an agent can copy a horizon
+	// from check output straight back into a move (SESSION-REPORT-2 N6).
+	if t, err := time.Parse("2006-01-02", val); err == nil {
+		u := t.Unix()
+		return &u, nil
+	}
 	if u, err := strconv.ParseInt(val, 10, 64); err == nil {
 		return &u, nil
 	}
-	return nil, fail.New(fail.CodeGeneric, "bad_time", "%s %q is neither RFC3339 nor Unix seconds", flag, val)
+	return nil, fail.New(fail.CodeGeneric, "bad_time", "%s %q is not RFC3339, YYYY-MM-DD, or Unix seconds", flag, val)
 }
 
 // when assembles the temporal viewpoint from --as-of (tt) and --valid-at (vt).
@@ -795,9 +802,13 @@ func cmdCheck() *cobra.Command {
 			}
 			errs, warns := 0, 0
 			for _, f := range v.Findings {
-				if f.Severity == "error" {
+				switch f.Severity {
+				case "error":
 					errs++
-				} else {
+				case "note":
+					// non-fatal advisory (e.g. mapped_pending_governance); never
+					// fails a check, even under --strict.
+				default:
 					warns++
 				}
 			}
@@ -1434,14 +1445,35 @@ func cmdPrefer() *cobra.Command {
 
 func cmdDecide() *cobra.Command {
 	var basis, reviewBy string
+	var asMap bool
 	c := &cobra.Command{
-		Use:   "decide <issue> <position>",
-		Short: "decide an issue by accepting a position",
-		Args:  cobra.ExactArgs(2),
+		Use:   "decide <issue> [position]",
+		Short: "decide an issue by accepting a position, or close it as a value-map with --map",
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rb, err := parseReviewBy(reviewBy)
 			if err != nil {
 				return err
+			}
+			if asMap {
+				if len(args) != 1 {
+					return fail.New(fail.CodeGeneric, "bad_args", "decide --map takes only <issue> (its object is the whole audience map, not a position)")
+				}
+				return withMover(func(disc string, m *proto.Mover) error {
+					if err := m.DecideMap(disc, args[0], basis, rb); err != nil {
+						return err
+					}
+					if !wantJSON() {
+						fmt.Printf("decided %s -> value-map\n", args[0])
+					} else {
+						out, _ := render.JSON(map[string]string{"issue": args[0], "kind": "map"})
+						fmt.Println(out)
+					}
+					return nil
+				})
+			}
+			if len(args) != 2 {
+				return fail.New(fail.CodeGeneric, "bad_args", "decide <issue> <position> (or `decide <issue> --map` to close as a value-map)")
 			}
 			return withMover(func(disc string, m *proto.Mover) error {
 				if err := m.Decide(disc, args[0], args[1], basis, rb); err != nil {
@@ -1458,7 +1490,8 @@ func cmdDecide() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&basis, "basis", "", "basis label")
-	c.Flags().StringVar(&reviewBy, "review-by", "", "re-examination horizon (RFC3339 or Unix seconds); check reports the decision once it passes")
+	c.Flags().BoolVar(&asMap, "map", false, "close a value-driven issue as its audience-conditional map (needs ≥2 audiences with differing verdicts; --review-by mandatory)")
+	c.Flags().StringVar(&reviewBy, "review-by", "", "re-examination horizon (RFC3339, YYYY-MM-DD, or Unix seconds); check reports the decision once it passes")
 	return c
 }
 
@@ -1476,14 +1509,35 @@ func parseReviewBy(val string) (int64, error) {
 
 func cmdSupersede() *cobra.Command {
 	var basis, reviewBy string
+	var asMap bool
 	c := &cobra.Command{
-		Use:   "supersede <issue> <position>",
-		Short: "overturn the standing decision on an issue (basis required); same position + new --review-by re-arms a review horizon",
-		Args:  cobra.ExactArgs(2),
+		Use:   "supersede <issue> [position]",
+		Short: "overturn the standing decision on an issue (basis required); --map converts it to a value-map; same position + new --review-by re-arms a review horizon",
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rb, err := parseReviewBy(reviewBy)
 			if err != nil {
 				return err
+			}
+			if asMap {
+				if len(args) != 1 {
+					return fail.New(fail.CodeGeneric, "bad_args", "supersede --map takes only <issue> (the new decision's object is the whole audience map)")
+				}
+				return withMover(func(disc string, m *proto.Mover) error {
+					if err := m.SupersedeMap(disc, args[0], basis, rb); err != nil {
+						return err
+					}
+					if !wantJSON() {
+						fmt.Printf("superseded: %s -> value-map\n", args[0])
+					} else {
+						out, _ := render.JSON(map[string]string{"issue": args[0], "kind": "map"})
+						fmt.Println(out)
+					}
+					return nil
+				})
+			}
+			if len(args) != 2 {
+				return fail.New(fail.CodeGeneric, "bad_args", "supersede <issue> <position> (or `supersede <issue> --map` to convert to a value-map)")
 			}
 			return withMover(func(disc string, m *proto.Mover) error {
 				if err := m.Supersede(disc, args[0], args[1], basis, rb); err != nil {
@@ -1500,7 +1554,8 @@ func cmdSupersede() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&basis, "basis", "", "why the prior decision is overturned (required)")
-	c.Flags().StringVar(&reviewBy, "review-by", "", "re-examination horizon (RFC3339 or Unix seconds)")
+	c.Flags().BoolVar(&asMap, "map", false, "convert the issue to a value-map decision (needs ≥2 audiences with differing verdicts; --review-by mandatory)")
+	c.Flags().StringVar(&reviewBy, "review-by", "", "re-examination horizon (RFC3339, YYYY-MM-DD, or Unix seconds)")
 	return c
 }
 
