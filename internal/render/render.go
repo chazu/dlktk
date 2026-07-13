@@ -77,7 +77,8 @@ type IssueStatus struct {
 	Stalemate   bool           `json:"stalemate"`
 	Advice      string         `json:"advice"`
 	ReframedTo  string         `json:"reframed_to,omitempty"` // this framing was replaced
-	Decided     *DecidedView   `json:"decided,omitempty"`
+	Decided     *DecidedView   `json:"decided,omitempty"`     // the single standing decision (select_one)
+	Decisions   []DecidedView  `json:"decisions,omitempty"`   // every standing decision (open cardinality records one per position)
 }
 
 // Status computes the status of one issue. decs are the in-force decisions at
@@ -127,10 +128,17 @@ func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue s
 	}
 	st.Stalemate = isStalemate(st)
 	st.Advice = advise(st)
+	// An open issue records a standing decision per position (multiple winners
+	// that compose); a select_one issue has at most one. Decisions holds every
+	// standing decision; Decided points at the sole one for select_one, so
+	// existing single-decision consumers are unchanged.
 	for _, d := range decs {
 		if d.Issue == issue {
-			st.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy}
+			st.Decisions = append(st.Decisions, DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy})
 		}
+	}
+	if card != string(ibis.Open) && len(st.Decisions) > 0 {
+		st.Decided = &st.Decisions[len(st.Decisions)-1]
 	}
 	return st
 }
@@ -210,7 +218,8 @@ func StatusText(st IssueStatus) string {
 			b.WriteString(strings.Repeat(" ", visLen(prefix)) + cDim(note) + "\n")
 		}
 	}
-	if d := st.Decided; d != nil {
+	for i := range st.Decisions {
+		d := st.Decisions[i]
 		ptext := ""
 		for _, p := range st.Positions {
 			if p.ID == d.Position {

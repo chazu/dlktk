@@ -125,17 +125,21 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 
 	for _, issue := range g.Issues() {
 		st := render.Status(g, fw, labels, issue, decs)
-		if d := st.Decided; d != nil && !d.Override {
-			// The position was IN when decided (no override flag); if it is no
-			// longer IN, the dialectic has moved out from under the decision.
-			if l := labels[d.Position]; l != af.IN {
-				out = append(out, Finding{
-					Kind: DecisionDrift, Severity: "error", Discussion: disc, Issue: issue, Node: d.Position,
-					Detail: fmt.Sprintf("decided position %s is no longer justified (now %s); re-argue or supersede", d.Position, l),
-				})
+		// Each standing decision is drift-checked independently — an open issue
+		// carries one per adopted position, a select_one issue at most one
+		// (wicked-problems-2.md item 6).
+		for di := range st.Decisions {
+			d := st.Decisions[di]
+			if !d.Override {
+				// The position was IN when decided (no override flag); if it is no
+				// longer IN, the dialectic has moved out from under the decision.
+				if l := labels[d.Position]; l != af.IN {
+					out = append(out, Finding{
+						Kind: DecisionDrift, Severity: "error", Discussion: disc, Issue: issue, Node: d.Position,
+						Detail: fmt.Sprintf("decided position %s is no longer justified (now %s); re-argue or supersede", d.Position, l),
+					})
+				}
 			}
-		}
-		if d := st.Decided; d != nil {
 			// A decision that survived zero tests is the kind most likely to
 			// rot: IN by silence, not by surviving attack. Substantive means
 			// an objection from another author that participates in the

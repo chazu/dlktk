@@ -108,7 +108,9 @@ run a divergence phase before any convergent move:
    `object <hybrid> "<still applies because…>" --answers <objection-id>`, or
    dismiss it with `support <hybrid> "<escapes it because…>" --answers
    <objection-id>`. A hybrid must not enter the arena cleaner than its
-   content.
+   content. If the rivals were only *forced* to compete by a `select_one`
+   framing — the answers actually compose — the deadlock is a cardinality
+   mistake, not a real dichotomy (see **Cardinality** below).
 2. `reframe` — if the deadlock signals a false dichotomy, replace the framing
    (`--basis` required; positions do not carry over; the old framing leaves
    the agenda and the lineage is recorded).
@@ -120,6 +122,31 @@ run a divergence phase before any convergent move:
    if the hybrid truly contains the parent, the parent's unanswered critics
    apply to it. Address the questions first (with ≥1 address from an author
    other than the hybrid's), then prefer.
+
+## Cardinality: compose or choose
+
+Pick an issue's cardinality when you `raise` it — it is fixed at creation:
+
+- **If candidate answers could compose** — process tweaks, practices,
+  guidelines, layered mitigations — raise it `--card open`. An open issue
+  records a **standing decision per position**: `decide <issue> <A>` and
+  `decide <issue> <B>` both stand (the winners are adopted together), the
+  agenda's `ready` section lists each undecided-but-justified position, and
+  `supersede <issue> <A>` revises just A's decision while B's stands. Each
+  per-position decision is drift-checked independently.
+- **Use `select_one` only when the answers genuinely exclude one another** —
+  pick this lock *or* that one, ship *or* don't. A second `decide` is rejected;
+  overturning goes through `supersede`.
+- **Expect a `select_one` contest between partial answers to end in a
+  synthesis.** If you find yourself synthesizing because the "rivals" were
+  really complementary, the issue wanted `--card open` — seating composable
+  answers as mutual rivals manufactures a bundle at close time.
+
+*Worked example.* "Which practices raise comprehension?" — pairing, spaced
+retrieval, and code review can all be adopted. `raise "which practices?"
+--card open`; propose the three; once each is IN and stress-tested, `decide`
+each in turn. Three standing decisions, no artificial contest, each revisable
+on its own.
 
 ## Values and audiences (for multi-stakeholder questions)
 

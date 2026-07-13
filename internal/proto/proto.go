@@ -394,7 +394,21 @@ func (m *Mover) Decide(disc, issue, position, basis string, reviewBy int64) erro
 		if err := g.CanDecide(issue, position); err != nil {
 			return err
 		}
-		if prior, err := standingDecision(s, disc, issue); err != nil {
+		// select_one holds one standing decision; a second decide is rejected.
+		// open cardinality records a decision per adopted position (the winners
+		// compose), so only a repeat decide on the *same* position is rejected
+		// (wicked-problems-2.md item 6).
+		if g.IssueCards[issue] == ibis.Open {
+			if prior, err := standingDecisionForPosition(s, disc, issue, position); err != nil {
+				return err
+			} else if prior != nil {
+				return &ibis.IllegalMove{
+					Node: position,
+					Detail: fmt.Sprintf("position %s is already decided on open issue %s; use `supersede %s %s --basis <label>` to revise it",
+						position, issue, issue, position),
+				}
+			}
+		} else if prior, err := standingDecision(s, disc, issue); err != nil {
 			return err
 		} else if prior != nil {
 			return &ibis.IllegalMove{
@@ -450,11 +464,26 @@ func (m *Mover) Supersede(disc, issue, position, basis string, reviewBy int64) e
 		if err := g.CanDecide(issue, position); err != nil {
 			return err
 		}
-		prior, err := standingDecision(s, disc, issue)
+		// On an open issue each position carries its own standing decision, so
+		// supersede targets the decision on <position> and re-decides that same
+		// position (revised basis, re-armed horizon). select_one has one
+		// decision on the issue, which the new position replaces
+		// (wicked-problems-2.md item 6).
+		open := g.IssueCards[issue] == ibis.Open
+		var prior *ibis.Decision
+		if open {
+			prior, err = standingDecisionForPosition(s, disc, issue, position)
+		} else {
+			prior, err = standingDecision(s, disc, issue)
+		}
 		if err != nil {
 			return err
 		}
 		if prior == nil {
+			if open {
+				return &ibis.IllegalMove{Node: position,
+					Detail: fmt.Sprintf("open issue %s has no standing decision on position %s to supersede; use decide", issue, position)}
+			}
 			return &ibis.IllegalMove{Node: issue,
 				Detail: fmt.Sprintf("issue %s has no standing decision to supersede; use decide", issue)}
 		}
@@ -463,8 +492,14 @@ func (m *Mover) Supersede(disc, issue, position, basis string, reviewBy int64) e
 			return err
 		}
 		labels := fw.Grounded()
-		// Close the prior decision's vt interval, then record the new one.
-		if err := s.SupersedeDecision(disc, issue); err != nil {
+		// Close the prior decision's vt interval, then record the new one. On an
+		// open issue only the targeted position's decision is closed; sibling
+		// decisions on the same issue stand.
+		supPos := ""
+		if open {
+			supPos = position
+		}
+		if err := s.SupersedeDecision(disc, issue, supPos); err != nil {
 			return err
 		}
 		return s.AddDecision(ibis.Decision{
@@ -475,7 +510,9 @@ func (m *Mover) Supersede(disc, issue, position, basis string, reviewBy int64) e
 	})
 }
 
-// standingDecision returns the in-force decision on an issue, or nil.
+// standingDecision returns the in-force decision on an issue, or nil. On an
+// open issue this is the first of possibly several — callers that need a
+// specific one use standingDecisionForPosition.
 func standingDecision(s *store.Store, disc, issue string) (*ibis.Decision, error) {
 	decs, err := s.Decisions(disc, store.Now())
 	if err != nil {
@@ -483,6 +520,21 @@ func standingDecision(s *store.Store, disc, issue string) (*ibis.Decision, error
 	}
 	for i := range decs {
 		if decs[i].Issue == issue {
+			return &decs[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// standingDecisionForPosition returns the in-force decision on a specific
+// position of an issue, or nil — the unit of decision on an open issue.
+func standingDecisionForPosition(s *store.Store, disc, issue, position string) (*ibis.Decision, error) {
+	decs, err := s.Decisions(disc, store.Now())
+	if err != nil {
+		return nil, err
+	}
+	for i := range decs {
+		if decs[i].Issue == issue && decs[i].Position == position {
 			return &decs[i], nil
 		}
 	}

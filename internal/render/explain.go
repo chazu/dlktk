@@ -121,16 +121,21 @@ func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue st
 			})
 		}
 	}
-	if pos, ok := readyToDecide(g, labels, issue, decs); ok {
+	ready := readyPositions(g, labels, issue, decs)
+	open := g.IssueCards[issue] == ibis.Open
+	for _, pos := range ready {
 		if !Tested(g, fw, pos) && !prompted[pos] {
 			mv.Moves = append(mv.Moves, MoveSuggestion{
 				Move: "object", Args: []string{pos},
 				Effect: fmt.Sprintf("stress-test %s before deciding: it is IN without a substantive objection (rival edges and self-objections don't count), not by surviving attack", pos),
 			})
 		}
+		effect := fmt.Sprintf("close the issue: %s is the unique justified position", pos)
+		if open {
+			effect = fmt.Sprintf("adopt %s: an open issue records a standing decision per justified position (the winners compose)", pos)
+		}
 		mv.Moves = append(mv.Moves, MoveSuggestion{
-			Move: "decide", Args: []string{issue, pos},
-			Effect: fmt.Sprintf("close the issue: %s is the unique justified position", pos),
+			Move: "decide", Args: []string{issue, pos}, Effect: effect,
 		})
 	}
 	mv.Moves = append(mv.Moves, MoveSuggestion{
@@ -197,17 +202,19 @@ func Agenda(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, decs []
 			v.Unpopulated = append(v.Unpopulated, IssueRef{Issue: issue, Text: g.Nodes[issue].Text})
 			continue
 		}
-		if pos, ok := readyToDecide(g, labels, issue, decs); ok {
+		openIssue := g.IssueCards[issue] == ibis.Open
+		for _, pos := range readyPositions(g, labels, issue, decs) {
 			v.Ready = append(v.Ready, IssueRef{
 				Issue: issue, Text: g.Nodes[issue].Text,
 				Position: pos, PositionText: g.Nodes[pos].Text,
 			})
-			// Untested: surfaced only when decide-adjacent — this issue is
-			// about to close on a winner no substantive objection ever
-			// engaged (rival edges never count). During divergence every
-			// fresh position is untested by design; flooding the section
-			// trains agents to skim it (wicked-problems-2.md item 1).
-			if !Tested(g, fw, pos) {
+			// Untested: surfaced only when decide-adjacent — a select_one issue
+			// about to close on a single winner no substantive objection ever
+			// engaged (rival edges never count). An open issue is multi-winner
+			// by nature, so surfacing every justified-but-unexamined position
+			// here is exactly the mid-divergence flooding item 1 forbids; its
+			// per-decide stress-test lives in the moves prompt instead.
+			if !openIssue && !Tested(g, fw, pos) {
 				v.Untested = append(v.Untested, IssueRef{
 					Issue: issue, Text: g.Nodes[issue].Text,
 					Position: pos, PositionText: g.Nodes[pos].Text,
@@ -234,6 +241,33 @@ func Agenda(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, decs []
 		}
 	}
 	return v
+}
+
+// readyPositions lists the positions an issue is ready to decide. A select_one
+// issue yields its single justified winner (when no position is contested and
+// exactly one is IN, and nothing is decided yet). An open issue — whose winners
+// compose — yields every IN position that has no standing decision yet, so the
+// agenda drives each independently to closure (wicked-problems-2.md item 6).
+func readyPositions(g *ibis.Graph, labels map[string]af.Label, issue string, decs []ibis.Decision) []string {
+	if g.IssueCards[issue] != ibis.Open {
+		if pos, ok := readyToDecide(g, labels, issue, decs); ok {
+			return []string{pos}
+		}
+		return nil
+	}
+	decided := map[string]bool{}
+	for _, d := range decs {
+		if d.Issue == issue {
+			decided[d.Position] = true
+		}
+	}
+	var out []string
+	for _, p := range positionsFor(g, issue) {
+		if labels[p] == af.IN && !decided[p] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // readyToDecide reports the position an undecided issue is ready to close on:

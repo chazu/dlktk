@@ -98,7 +98,7 @@ func TestHistoryExportRoundTrip(t *testing.T) {
 	if err := src.AddDecision(ibis.Decision{Disc: "d", Issue: "i1", Position: "p1", Decider: "x"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := src.SupersedeDecision("d", "i1"); err != nil { // close vt interval
+	if err := src.SupersedeDecision("d", "i1", ""); err != nil { // close vt interval
 		t.Fatal(err)
 	}
 	if err := src.AddDecision(ibis.Decision{Disc: "d", Issue: "i1", Position: "p1", Basis: "again", Decider: "x", Supersedes: "p1"}); err != nil {

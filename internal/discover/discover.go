@@ -10,7 +10,13 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.12.0 is the synthesis-discipline batch
+// Version of the dlktk contract. 0.13.0 opens the closure story for
+// open-cardinality issues (wicked-problems-2.md item 6): decide records a
+// standing decision per position (the winners compose, so a repeat decide is
+// rejected only on the same position), supersede targets the decision on a
+// given position, IssueStatus carries a decisions[] list, and the agenda's
+// ready section lists each undecided-but-justified position on an open issue.
+// 0.12.0 is the synthesis-discipline batch
 // (wicked-problems-2.md items 2-4): the evaluator-inert `addresses` relation
 // with --answers on object/support (discharging a synthesis's inherited
 // questions), inherited_questions in NodeView/WhyView and the composite
@@ -43,7 +49,7 @@ import (
 // drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
 // supersede move (bare re-decide rejected, design §16 Q4) and
 // decided.supersedes.
-const Version = "0.12.0"
+const Version = "0.13.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -122,8 +128,8 @@ func Current() Schema {
 			{"prefer", []string{"winner", "loser", "--basis label"}, "AF nodes; no preference cycle; result warns (self-elevated synthesis) when the winner subsumes the loser without answering its objections", true},
 			{"promote", []string{"node", "value"}, "AF node owned by the author; one value per node (to change, concede and restate)", true},
 			{"audience", []string{"name", "value...", "[--supersede --basis label]"}, "at least two distinct values, most important first; re-declaring a name requires --supersede with a basis", true},
-			{"decide", []string{"issue", "position", "[--basis label]", "[--review-by T]"}, "position responds_to issue; issue not already decided (overturning requires supersede); review-by must be in the future", true},
-			{"supersede", []string{"issue", "position", "--basis label", "[--review-by T]"}, "issue already decided; basis required; new decision links the prior position", true},
+			{"decide", []string{"issue", "position", "[--basis label]", "[--review-by T]"}, "position responds_to issue; select_one: issue not already decided (overturn via supersede); open: one standing decision per position — the winners compose — so a repeat decide is rejected only on the same position; review-by must be in the future", true},
+			{"supersede", []string{"issue", "position", "--basis label", "[--review-by T]"}, "basis required; select_one: replaces the issue's single decision; open: revises the standing decision on <position> (siblings stand); new decision links the prior position", true},
 			{"concede", []string{"node"}, "author (identity, not persona) owns the node", true},
 			{"retract", []string{"node"}, "author (identity, not persona) owns the node", true},
 			{"roster", []string{"[author]", "[role]"}, "no args lists bindings; author+role pre-declares one (moves auto-record otherwise)", true},
@@ -156,7 +162,7 @@ func Current() Schema {
 		},
 		ErrorEnvelope: "{error: kind, detail: string, node?: id}",
 		Envelopes: map[string]string{
-			"IssueStatus":       "{issue, issue_text, cardinality, under?, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool, untested?: bool}], undecided: [id], stalemate: bool, advice, reframed_to?, decided?: {position, basis, decider, override, supersedes?, review_by?}}",
+			"IssueStatus":       "{issue, issue_text, cardinality, under?, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool, untested?: bool}], undecided: [id], stalemate: bool, advice, reframed_to?, decided?: {position, basis, decider, override, supersedes?, review_by?} (select_one), decisions?: [{position, basis, decider, override, supersedes?, review_by?}] (all standing decisions; open issues record one per position)}",
 			"AgendaView":        "{undecided: [{id, kind, text, label}], ready: [{issue, text, position, position_text}], unpopulated: [{issue, text}], untested: [{issue, text, position, position_text}], assumptions: [{id, kind, text, label}]}",
 			"MovesView":         "{issue, moves: [{move, args: [string], effect}]}",
 			"WhyView":           "{node, text, label, because: [{attacker, attacker_text, attacker_label, reason}], inherited_questions?: [InheritedQuestion], to_flip: [{move, args: [string], effect}]}",

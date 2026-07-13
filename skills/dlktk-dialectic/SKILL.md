@@ -130,6 +130,24 @@ survive every declared value ranking).
   reveals a deeper question, `raise "<question>" --from <that node>` so the
   provenance is recorded and the sub-issue nests under it in `tree`.
 
+## Compose or choose: pick the cardinality when you raise (§item 6)
+
+Cardinality is fixed at `raise` time. **If the candidate answers could compose**
+— practices, process tweaks, layered mitigations — raise it `--card open`: an
+open issue records a **standing decision per position** (`decide <issue> <A>`
+*and* `decide <issue> <B>` both stand — the winners are adopted together),
+`agenda`'s `ready` lists each undecided-but-justified position, and `supersede`
+revises one position's decision while its siblings stand. **Use `select_one`
+only when the answers genuinely exclude one another.** A `select_one` contest
+between *partial* answers tends to end in a synthesis — if you are synthesizing
+because complementary answers were seated as rivals, the issue wanted
+`--card open`; false rivalry manufactures a bundle at close time.
+
+*Example:* "which practices raise comprehension?" (pairing, spaced retrieval,
+code review — all adoptable) → `raise … --card open`, propose all three,
+stress-test each, `decide` each in turn: three standing decisions, no artificial
+contest.
+
 ## Move discipline (the rules that keep a debate honest)
 
 - **Search before you argue.** `search "<phrase>"` — if the claim already exists,
@@ -149,7 +167,9 @@ survive every declared value ranking).
      undefeated objections as open questions** (`show`/`why`/`moves` list
      them): re-aim one with `object <hybrid> "…" --answers <objection-id>` or
      dismiss it with `support <hybrid> "…" --answers <objection-id>` — a
-     hybrid must not enter the arena cleaner than its content.
+     hybrid must not enter the arena cleaner than its content. If the rivals
+     only compete because of a `select_one` framing and actually compose, the
+     deadlock is a cardinality mistake — the issue wanted `--card open`.
   2. `reframe <issue> "<new framing>" --basis <label>` — when the deadlock is
      a false dichotomy. Positions don't carry over; the dead framing leaves
      the agenda; lineage is recorded.
@@ -164,12 +184,15 @@ survive every declared value ranking).
   rankings with `audience <name> <v1> <v2>…`; read the conflict with
   `audiences` and `status --under <name>`. Robust-across-audiences is the
   strongest justification a wicked question admits.
-- **Decisions are closing acts — provisionally.** `decide <issue> <position>`
-  is rejected on an already-decided issue; overturning goes through `supersede
-  <issue> <position> --basis <label>`, which records *why* and links the prior
-  decision. Deciding against the justified position is allowed but flagged as
-  an override — say so. Record known provisionality with `--review-by <T>`;
-  `check` flags the decision when the horizon passes.
+- **Decisions are closing acts — provisionally.** On a `select_one` issue,
+  `decide <issue> <position>` is rejected once the issue is decided; overturning
+  goes through `supersede <issue> <position> --basis <label>`, which records
+  *why* and links the prior decision. On an `open` issue, `decide` records one
+  standing decision **per position** (a repeat is rejected only on the same
+  position) and `supersede` revises a single position's decision. Deciding
+  against the justified position is allowed but flagged as an override — say so.
+  Record known provisionality with `--review-by <T>`; `check` flags the decision
+  when the horizon passes.
 - **Withdraw only your own mistakes** with `concede <node>` (checked against
   `--author`).
 

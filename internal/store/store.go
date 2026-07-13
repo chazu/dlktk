@@ -281,7 +281,12 @@ func (s *Store) Graph(disc string, w When) (*ibis.Graph, error) {
 
 // SupersedeDecision invalidates (closes the vt interval of) any current decision
 // on the given issue, so a fresh decide supersedes it. No-op if none stands.
-func (s *Store) SupersedeDecision(disc, issue string) error {
+// SupersedeDecision closes the tt interval of the standing decision(s) on an
+// issue. A non-empty position closes only the decision on that position — the
+// unit of supersession on an open issue, where sibling per-position decisions
+// must stand; an empty position closes every decision on the issue (select_one,
+// which has at most one).
+func (s *Store) SupersedeDecision(disc, issue, position string) error {
 	facts, err := s.ops.QueryFacts(factstore.FactFilter{Relation: relDecision})
 	if err != nil {
 		return fail.Store("query decisions: %v", err)
@@ -291,7 +296,7 @@ func (s *Store) SupersedeDecision(disc, issue string) error {
 		if err := json.Unmarshal([]byte(f.Args), &d); err != nil {
 			continue
 		}
-		if d.Disc == disc && d.Issue == issue {
+		if d.Disc == disc && d.Issue == issue && (position == "" || d.Position == position) {
 			if err := s.ops.InvalidateFact(f.ID); err != nil {
 				return fail.Store("invalidate prior decision on %s: %v", issue, err)
 			}
