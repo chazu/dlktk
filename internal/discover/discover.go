@@ -10,7 +10,12 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.14.0 adds value-map closure
+// Version of the dlktk contract. 0.15.0 adds the single_author_convergence
+// strict finding (wicked-problems-2.md item 8): a decided synthesis whose
+// scrutiny or decision never left the synthesis author — the decider shares its
+// author, or every objection against it does — caught regardless of how many
+// --author strings the orchestrator wore, because it tests the shape of the
+// scrutiny, not the names on it. 0.14.0 adds value-map closure
 // (wicked-problems-2.md item 7): `decide <issue> --map --review-by T` closes a
 // value-driven issue with its audience-conditional map instead of a single
 // winner — legal only when the issue is audience-sensitive right now (>=2
@@ -60,7 +65,7 @@ import (
 // drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
 // supersede move (bare re-decide rejected, design §16 Q4) and
 // decided.supersedes.
-const Version = "0.14.0"
+const Version = "0.15.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -187,7 +192,7 @@ func Current() Schema {
 			"WorldsView":        "{issue, under?, worlds: [{in: [{id, kind, text, label}], distinguishing: [id]}], robust: [ref], contingent: [ref], hopeless: [ref], too_contested?: bool, note?}",
 			"AudiencesView":     "{audiences: [{name, ranking: [value], author?}], issues: [{issue, text, baseline: {position: label}, by_audience: {name: {position: label}}, robust: [id], sensitive: [{position, text, verdicts: {audience|baseline: label}}]}]}",
 			"Audience":          "{disc, name, ranking: [value], basis?, author}",
-			"CheckView":         "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate|untested_decision|review_due|defeated_assumption|self_elevated_synthesis|bundle_synthesis|map_drift|mapped_pending_governance, severity: error|warning|note, discussion, issue?, node?, detail}], ok: bool}",
+			"CheckView":         "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate|untested_decision|review_due|defeated_assumption|self_elevated_synthesis|bundle_synthesis|map_drift|mapped_pending_governance|single_author_convergence, severity: error|warning|note, discussion, issue?, node?, detail}], ok: bool}",
 			"Discussion":        "{id, title, subject, created_by}",
 			"RosterView":        "{discussion, bindings: [{disc, author, role}]}",
 		},

@@ -126,6 +126,14 @@ survive every declared value ranking).
   marks the rest). The objection must come from a *different author* than the
   position — a self-objection does not count as a test, and preferring the
   position over its objection un-tests it.
+- **Stress-test a synthesis from outside it.** Default procedure: run the
+  devil's-advocate turn as a **separate agent process whose only context is the
+  exported graph** (`dlktk export`), with three distinct `--author` identities
+  for the synthesis author, the advocate, and the decider. A roster of distinct
+  names proves *attribution, not independence* — one mind can type every
+  `--author`. `check --strict` fires `single_author_convergence` when a decided
+  synthesis's decider shares its author or every objection against it does,
+  regardless of how many names the session wore — so make the isolation real.
 - **Every wicked problem is a symptom of another problem**: when an argument
   reveals a deeper question, `raise "<question>" --from <that node>` so the
   provenance is recorded and the sub-issue nests under it in `tree`.
@@ -241,8 +249,12 @@ objections); or a move budget runs out.
   preference-excused attacks don't count), expired review horizons
   (`review_due`), decisions resting on defeated assumptions
   (`defeated_assumption`), a hybrid preferred over a parent whose objections
-  it never answered (`self_elevated_synthesis`), and a decided ≥3-parent
-  synthesis with no recorded drops (`bundle_synthesis`).
+  it never answered (`self_elevated_synthesis`), a decided ≥3-parent synthesis
+  with no recorded drops (`bundle_synthesis`), a mapped issue whose audience map
+  has drifted (`map_drift`), and a decided synthesis scrutinised or decided only
+  within its own author (`single_author_convergence`). The note
+  `mapped_pending_governance` (never fatal) flags a mapped issue whose
+  governance question is still unraised.
 
 ## Postmortem
 

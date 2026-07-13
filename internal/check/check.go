@@ -30,6 +30,11 @@ const (
 	SelfElevatedSynthesis = "self_elevated_synthesis" // hybrid preferred over a parent whose objections it never answered (warning)
 	BundleSynthesis       = "bundle_synthesis"        // decided ≥3-parent synthesis with no recorded drops (warning)
 	MapDrift              = "map_drift"               // a mapped issue's current audience map differs from its decision-time map (warning)
+	// SingleAuthorConvergence fires when a decided synthesis's scrutiny or
+	// decision never left the synthesis author's own hands — the decider shares
+	// the synthesis author, or every objection against it does. It tests the
+	// shape of the scrutiny, not the number of author strings it wore (warning).
+	SingleAuthorConvergence = "single_author_convergence"
 	// MappedPendingGovernance is a non-fatal note (never fails a check, even
 	// under --strict): a value-map decision defers "whose ranking governs?" and
 	// that question should be raised as its own issue.
@@ -180,6 +185,29 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 					Kind: DefeatedAssumption, Severity: "warning", Discussion: disc, Issue: issue, Node: a,
 					Detail: fmt.Sprintf("decided position %s rests on assumption %s, which is now defeated (OUT); re-argue or supersede", d.Position, a),
 				})
+			}
+			// single_author_convergence (item 8): a decided synthesis whose
+			// scrutiny or decision never left the synthesis author's own hands —
+			// the echo chamber regardless of how many --author strings it wore.
+			// Suppressed when untested_decision already fired (the every-objection-
+			// is-a-self-objection shape is that finding; one defect, one finding).
+			if parents := g.SynthesisParents(d.Position); len(parents) > 0 && !untestedNodes[d.Position] {
+				synthAuthor := g.Nodes[d.Position].Author
+				objectors, selfOnly := 0, true
+				for _, l := range g.Links {
+					if l.Rel == ibis.ObjectsTo && l.Dst == d.Position {
+						objectors++
+						if l.Author != synthAuthor {
+							selfOnly = false
+						}
+					}
+				}
+				if d.Decider == synthAuthor || (objectors > 0 && selfOnly) {
+					out = append(out, Finding{
+						Kind: SingleAuthorConvergence, Severity: "warning", Discussion: disc, Issue: issue, Node: d.Position,
+						Detail: fmt.Sprintf("decided synthesis %s was scrutinised or decided only within its own author (%s): the decider and/or every objector share it. Roster separation proves attribution, not independence — run the devil's-advocate turn and the decide as a separate agent under a different author", d.Position, synthAuthor),
+					})
+				}
 			}
 		}
 		if st.Stalemate && st.ReframedTo == "" {

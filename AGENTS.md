@@ -93,6 +93,17 @@ run a divergence phase before any convergent move:
   names the decide-adjacent one; `status` marks the rest). The objection must
   come from a *different author* than the position — a self-objection does not
   count as a test, and preferring the position over its objection un-tests it.
+- **Scrutinise a synthesis from outside it.** The default procedure for the
+  synthesis stress-test is to run the devil's-advocate turn as a **separate
+  agent process whose only context is the exported graph** (`dlktk export`, or
+  read access to the store — no shared conversational state with the synthesis
+  author), and to keep **three distinct `--author` identities** for the
+  synthesis author, the devil's advocate, and the decider. A roster of distinct
+  author strings proves *attribution, not independence* — `--author` is
+  self-assigned, and one mind can wear seven. `check --strict` reflects this
+  with `single_author_convergence`: it fires when a decided synthesis's decider
+  shares its author, or every objection against it does, **regardless of how
+  many author strings the session wore** — so the isolation has to be real.
 
 **Stalemates have three exits, in this order of consideration:**
 
@@ -258,5 +269,10 @@ exploration reads.
   resting on a defeated assumption (`defeated_assumption`), a hybrid
   preferred over a parent whose objections it never answered
   (`self_elevated_synthesis` — current-graph: a conceded address re-arms it),
-  and a decided ≥3-parent synthesis with no recorded drops
-  (`bundle_synthesis`).
+  a decided ≥3-parent synthesis with no recorded drops (`bundle_synthesis`),
+  a mapped issue whose audience map has drifted since it was decided
+  (`map_drift`), and a decided synthesis whose scrutiny or decision never left
+  its own author (`single_author_convergence` — the decider shares its author,
+  or every objector does). The non-fatal note `mapped_pending_governance`
+  reminds you to raise a mapped issue's governance question; it never fails a
+  check.
