@@ -1,8 +1,10 @@
 # built binary
 /dlktk
 
-# local discussion pointer + any local pudl store
+# local discussion pointer + any local pudl store (the committed record of an
+# exercise is its exported .ndjson, not the store)
 /.dlktk/
+examples/*/.dlktk/
 *.db
 *.db-wal
 *.db-shm

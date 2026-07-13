@@ -180,10 +180,19 @@ func TestExportImportRoundTrip(t *testing.T) {
 	if err := src.AddNode(ibis.Node{ID: "i1", Disc: "d", Kind: ibis.Issue, Text: "q?", Author: "x"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := src.AddNode(ibis.Node{ID: "p1", Disc: "d", Kind: ibis.Position, Text: "yes", Author: "x"}); err != nil {
+	// A synthesis node carrying drops, and an addresses link — both added by
+	// arc two; the round-trip must preserve them (export is the committed
+	// record, so a rel it can't re-import silently loses history).
+	if err := src.AddNode(ibis.Node{ID: "p1", Disc: "d", Kind: ibis.Position, Text: "yes", Author: "x", Drops: []string{"drops the slow path"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := src.AddNode(ibis.Node{ID: "o1", Disc: "d", Kind: ibis.Argument, Text: "answer", Author: "x"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := src.AddLink(ibis.Link{ID: "l1", Disc: "d", Src: "p1", Dst: "i1", Rel: ibis.RespondsTo, Author: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := src.AddLink(ibis.Link{ID: "l2", Disc: "d", Src: "o1", Dst: "p1", Rel: ibis.Addresses, Author: "x"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := src.SetIssueCard(ibis.IssueCard{Issue: "i1", Cardinality: ibis.SelectOne}); err != nil {
@@ -203,11 +212,23 @@ func TestExportImportRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(g.Nodes) != 2 || len(g.Links) != 1 {
-			t.Fatalf("round %d: got %d nodes / %d links, want 2/1", round, len(g.Nodes), len(g.Links))
+		if len(g.Nodes) != 3 || len(g.Links) != 2 {
+			t.Fatalf("round %d: got %d nodes / %d links, want 3/2", round, len(g.Nodes), len(g.Links))
 		}
 		if g.IssueCards["i1"] != ibis.SelectOne {
 			t.Fatalf("round %d: issue card lost", round)
+		}
+		if drops := g.Nodes["p1"].Drops; len(drops) != 1 || drops[0] != "drops the slow path" {
+			t.Fatalf("round %d: synthesis drops lost: %+v", round, drops)
+		}
+		found := false
+		for _, l := range g.Links {
+			if l.Rel == ibis.Addresses && l.Src == "o1" && l.Dst == "p1" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("round %d: addresses link lost", round)
 		}
 	}
 }

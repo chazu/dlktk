@@ -8,11 +8,13 @@ package proto
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/chazu/dlktk/internal/af"
 	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/id"
+	"github.com/chazu/dlktk/internal/render"
 	"github.com/chazu/dlktk/internal/store"
 )
 
@@ -158,10 +160,14 @@ func (m *Mover) Propose(disc, issue, text, promotes string) (string, error) {
 }
 
 // Synthesize adds a hybrid position recombining two or more existing positions
-// on the same issue, recording the lineage. The hybrid is an ordinary position
-// to the evaluator — on a select_one issue it joins the rivalry, parents
-// included, until they are conceded or a preference/audience elevates it.
-func (m *Mover) Synthesize(disc, issue, text string, froms []string, promotes string) (string, error) {
+// on the same issue, recording the lineage and what the hybrid explicitly
+// drops from its parents. The hybrid is an ordinary position to the evaluator
+// — on a select_one issue it joins the rivalry, parents included, until they
+// are conceded or a preference/audience elevates it. The returned warnings
+// are advisory (the move stands): a ≥3-parent synthesis with no recorded
+// drops is warned about, because a synthesis that drops nothing is a bundle
+// (wicked-problems-2.md item 4).
+func (m *Mover) Synthesize(disc, issue, text string, froms []string, promotes string, drops []string) (string, []string, error) {
 	nid := id.New()
 	err := m.s.Move(func(s *store.Store) error {
 		if err := m.ensureRoster(s, disc); err != nil {
@@ -174,7 +180,7 @@ func (m *Mover) Synthesize(disc, issue, text string, froms []string, promotes st
 		if err := g.CanSynthesize(issue, froms); err != nil {
 			return err
 		}
-		if err := s.AddNode(ibis.Node{ID: nid, Disc: disc, Kind: ibis.Position, Text: text, Author: m.author}); err != nil {
+		if err := s.AddNode(ibis.Node{ID: nid, Disc: disc, Kind: ibis.Position, Text: text, Author: m.author, Drops: drops}); err != nil {
 			return err
 		}
 		if err := m.addValue(s, disc, nid, promotes); err != nil {
@@ -191,19 +197,30 @@ func (m *Mover) Synthesize(disc, issue, text string, froms []string, promotes st
 		return nil
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return nid, nil
+	var warnings []string
+	if len(froms) >= 3 && len(drops) == 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"synthesis %s recombines %d parents and records no drops — a synthesis that drops nothing is a bundle; state what it excludes with --drops (check --strict reports bundle_synthesis if it is decided as-is)",
+			nid, len(froms)))
+	}
+	return nid, warnings, nil
 }
 
-// Support adds an argument supporting a position or argument.
-func (m *Mover) Support(disc, target, text, promotes string) (string, error) {
-	return m.attach(disc, target, text, ibis.Supports, "", promotes)
+// Support adds an argument supporting a position or argument. A non-empty
+// answers names a parent objection this support dismisses on a synthesis
+// ("here is why the hybrid escapes it") — recorded as an evaluator-inert
+// addresses link.
+func (m *Mover) Support(disc, target, text, promotes, answers string) (string, error) {
+	return m.attach(disc, target, text, ibis.Supports, "", promotes, answers)
 }
 
-// Object adds an argument objecting to a position or argument.
-func (m *Mover) Object(disc, target, text, promotes string) (string, error) {
-	return m.attach(disc, target, text, ibis.ObjectsTo, "", promotes)
+// Object adds an argument objecting to a position or argument. A non-empty
+// answers names a parent objection this objection re-aims at a synthesis
+// ("this still applies") — recorded as an evaluator-inert addresses link.
+func (m *Mover) Object(disc, target, text, promotes, answers string) (string, error) {
+	return m.attach(disc, target, text, ibis.ObjectsTo, "", promotes, answers)
 }
 
 // Assume adds an argument tagged as an assumption — a challengeable premise
@@ -211,10 +228,10 @@ func (m *Mover) Object(disc, target, text, promotes string) (string, error) {
 // the tag is bookkeeping that agenda/check use to surface unexamined or
 // defeated premises.
 func (m *Mover) Assume(disc, target, text string) (string, error) {
-	return m.attach(disc, target, text, ibis.Supports, ibis.TagAssumption, "")
+	return m.attach(disc, target, text, ibis.Supports, ibis.TagAssumption, "", "")
 }
 
-func (m *Mover) attach(disc, target, text string, rel ibis.Rel, tag, promotes string) (string, error) {
+func (m *Mover) attach(disc, target, text string, rel ibis.Rel, tag, promotes, answers string) (string, error) {
 	nid := id.New()
 	err := m.s.Move(func(s *store.Store) error {
 		if err := m.ensureRoster(s, disc); err != nil {
@@ -227,13 +244,24 @@ func (m *Mover) attach(disc, target, text string, rel ibis.Rel, tag, promotes st
 		if err := g.CanAttach(target, rel); err != nil {
 			return err
 		}
+		if answers != "" {
+			if err := g.CanAnswer(target, answers); err != nil {
+				return err
+			}
+		}
 		if err := s.AddNode(ibis.Node{ID: nid, Disc: disc, Kind: ibis.Argument, Text: text, Author: m.author, Tag: tag}); err != nil {
 			return err
 		}
 		if err := m.addValue(s, disc, nid, promotes); err != nil {
 			return err
 		}
-		return m.addLink(s, disc, nid, target, rel)
+		if err := m.addLink(s, disc, nid, target, rel); err != nil {
+			return err
+		}
+		if answers != "" {
+			return m.addLink(s, disc, nid, answers, ibis.Addresses)
+		}
+		return nil
 	})
 	if err != nil {
 		return "", err
@@ -305,8 +333,14 @@ func (m *Mover) DeclareAudience(disc, name string, ranking []string, supersede b
 // check and the write share one transaction: two agents concurrently asserting
 // `prefer A B` and `prefer B A` can no longer both pass the check (§16 Q2's
 // all-prefer-all collapse via the ANALYSIS §1.4 race).
-func (m *Mover) Prefer(disc, winner, loser, basis string) (string, error) {
+//
+// The returned warnings are advisory (the move stands): burying a synthesis
+// parent whose undefeated objections have not been addressed on the hybrid is
+// the subsumption dodge — if the hybrid truly contains the parent, the
+// parent's unanswered critics apply to it (wicked-problems-2.md item 3).
+func (m *Mover) Prefer(disc, winner, loser, basis string) (string, []string, error) {
 	pid := id.New()
+	var warnings []string
 	err := m.s.Move(func(s *store.Store) error {
 		if err := m.ensureRoster(s, disc); err != nil {
 			return err
@@ -318,14 +352,25 @@ func (m *Mover) Prefer(disc, winner, loser, basis string) (string, error) {
 		if err := g.CanPrefer(winner, loser); err != nil {
 			return err
 		}
+		if fw, err := af.Build(g); err == nil {
+			if open, flagged := render.SelfElevation(g, fw.Grounded(), winner, loser); flagged {
+				detail := "all recorded addresses are self-authored"
+				if len(open) > 0 {
+					detail = "open: " + strings.Join(open, ", ")
+				}
+				warnings = append(warnings, fmt.Sprintf(
+					"self-elevated synthesis: %s subsumes %s but %s's undefeated objections are not answered on the hybrid (%s) — object/support %s --answers <id> first (the preference stands; check --strict reports self_elevated_synthesis)",
+					winner, loser, loser, detail, winner))
+			}
+		}
 		return s.AddPreference(ibis.Preference{
 			ID: pid, Disc: disc, Winner: winner, Loser: loser, Basis: basis, Author: m.author,
 		})
 	})
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return pid, nil
+	return pid, warnings, nil
 }
 
 // Decide closes an issue by accepting a position. The override flag is set when

@@ -669,7 +669,7 @@ func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Pr
 			return err
 		}
 		switch v.Rel {
-		case ibis.RespondsTo, ibis.Supports, ibis.ObjectsTo, ibis.Synthesizes, ibis.RaisedFrom:
+		case ibis.RespondsTo, ibis.Supports, ibis.ObjectsTo, ibis.Synthesizes, ibis.RaisedFrom, ibis.Addresses:
 		default:
 			return bad("link rel %q invalid", v.Rel)
 		}

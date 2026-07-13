@@ -12,9 +12,40 @@ import (
 	"github.com/chazu/dlktk/internal/ibis"
 )
 
-// PositionView is one position's status within an issue. Untested marks an IN
-// label earned by silence: no attacker ever engaged it, so "justified" means
-// "unexamined", not "vindicated".
+// Tested reports whether a position has faced at least one substantive attack:
+// an objects_to edge that (1) is authored by someone other than the position's
+// author and (2) participates in the defeat relation — if it no longer wins,
+// it was beaten by a counter-argument, not excused by a preference (a
+// preference-neutralized objection is dropped from Defeat at build time, so a
+// later `prefer` re-arms untested-ness). select_one rival edges never count:
+// on any multi-position issue every rival is trivially "attacked", which is
+// not examination. Computed from the raw links plus fw.Defeat — the merged
+// attack set has no provenance. An unattributed objection (empty author) gets
+// the benefit of the doubt; only provable self-dealing is excluded, since
+// authorship is attribution, not identity (wicked-problems-2.md item 1).
+func Tested(g *ibis.Graph, fw *af.Framework, position string) bool {
+	defeats := map[[2]string]bool{}
+	for _, e := range fw.Defeat {
+		defeats[[2]string{e.From, e.To}] = true
+	}
+	posAuthor := g.Nodes[position].Author
+	for _, l := range g.Links {
+		if l.Rel != ibis.ObjectsTo || l.Dst != position {
+			continue
+		}
+		if a := g.Nodes[l.Src].Author; a != "" && a == posAuthor {
+			continue // self-objection: the one mind testing itself
+		}
+		if defeats[[2]string{l.Src, position}] {
+			return true
+		}
+	}
+	return false
+}
+
+// PositionView is one position's status within an issue. Untested marks a
+// live (IN or UNDEC) label that never faced a substantive objection (see
+// Tested): "justified" then means "unexamined", not "vindicated".
 type PositionView struct {
 	ID         string   `json:"id"`
 	Text       string   `json:"text"`
@@ -85,7 +116,7 @@ func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue s
 			AttackedBy: atk,
 			DefeatedBy: def,
 			Reinstated: lbl == af.IN && len(atk) > 0,
-			Untested:   lbl == af.IN && len(atk) == 0,
+			Untested:   (lbl == af.IN || lbl == af.UNDEC) && !Tested(g, fw, p),
 		})
 		if lbl == af.UNDEC {
 			st.Undecided = append(st.Undecided, p)
@@ -142,9 +173,13 @@ func advise(st IssueStatus) string {
 	case len(st.Positions) == 0:
 		return "no positions yet; propose one"
 	case len(in) == 1 && len(undec) == 0 && len(untested) == 1:
-		return fmt.Sprintf("%s justified — but untested (never attacked); stress-test it before deciding", in[0])
+		return fmt.Sprintf("%s justified — but untested (no substantive objection has engaged it); stress-test it before deciding", in[0])
 	case len(in) == 1 && len(undec) == 0:
 		return fmt.Sprintf("%s justified", in[0])
+	case st.Stalemate && len(untested) > 0:
+		// Untested rivals must not be offered `prefer` as a co-equal exit: one
+		// ordering, not two options (wicked-problems-2.md item 1).
+		return fmt.Sprintf("mutual stalemate — %s all UNDEC, none defeated; %s untested (rival edges only, no substantive objection) — object first, then prefer; a synthesis of the rivals may transcend it, and a reframe is worth considering if this is a false dichotomy (a new argument helps only if it defeats from outside the stalemate)", strings.Join(undec, " vs "), strings.Join(untested, ", "))
 	case st.Stalemate:
 		return fmt.Sprintf("mutual stalemate — %s all UNDEC, none defeated; a preference resolves it, a synthesis of the rivals may transcend it, and a reframe is worth considering if this is a false dichotomy (a new argument helps only if it defeats from outside the stalemate)", strings.Join(undec, " vs "))
 	case len(undec) >= 2 && len(in) == 0:
@@ -203,11 +238,13 @@ func StatusText(st IssueStatus) string {
 func positionNote(p PositionView) string {
 	switch p.Label {
 	case "IN":
+		// Untested outranks reinstated: a winner whose only attackers were
+		// rivals (or excused objections) is unexamined, whatever beat them.
+		if p.Untested {
+			return "justified — but untested (no substantive objection has engaged it)"
+		}
 		if p.Reinstated {
 			return "reinstated — an attacker was itself defeated"
-		}
-		if p.Untested {
-			return "justified — but untested (never attacked)"
 		}
 		return "justified — no surviving attacker"
 	case "OUT":
@@ -216,6 +253,9 @@ func positionNote(p PositionView) string {
 		}
 		return "defeated"
 	case "UNDEC":
+		if p.Untested {
+			return "contested and untested — object first, then prefer"
+		}
 		return "contested — needs an argument or preference"
 	}
 	return ""
@@ -429,12 +469,16 @@ func (t *treeWriter) writeBody(node string, rel ibis.Rel, prefix, connector, chi
 	if who := t.attribution(n); who != "" {
 		tail += "  " + who
 	}
-	// Synthesis lineage: the hybrid names its parents inline.
+	// Synthesis lineage: the hybrid names its parents inline, and what it
+	// recorded as dropped (a synthesis that drops nothing is a bundle).
 	if parents := synthesizedFrom(t.g, node); len(parents) > 0 {
 		for i, p := range parents {
 			parents[i] = pid(p)
 		}
 		tail += "  " + cDim(t.glyph("⊕ from ", "(+) from ")) + strings.Join(parents, cDim("+"))
+		if drops := n.Drops; len(drops) > 0 {
+			tail += "  " + cDim(t.glyph("⊖ drops: ", "(-) drops: ")+strings.Join(drops, " · "))
+		}
 	}
 	// On the issue line, name the standing decision so it is visible without
 	// scanning the subtree for the ★-marked position.
@@ -551,14 +595,7 @@ func (t *treeWriter) relGlyph(rel ibis.Rel) string {
 // synthesizedFrom returns the parent positions a hybrid was recombined from,
 // sorted, or nil.
 func synthesizedFrom(g *ibis.Graph, node string) []string {
-	var out []string
-	for _, l := range g.Links {
-		if l.Rel == ibis.Synthesizes && l.Src == node {
-			out = append(out, l.Dst)
-		}
-	}
-	sort.Strings(out)
-	return out
+	return g.SynthesisParents(node)
 }
 
 func (t *treeWriter) glyph(unicode, ascii string) string {

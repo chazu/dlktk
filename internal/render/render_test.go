@@ -33,7 +33,9 @@ func settledGraph() (*ibis.Graph, *af.Framework, map[string]af.Label) {
 
 // When an issue's labelling has settled on a unique IN position, moves must
 // offer the terminal move (decide) — otherwise an agent following the tool's
-// suggestions can never close an issue.
+// suggestions can never close an issue. A, having won only by its rival's
+// defeat (no substantive objection engaged A itself), gets the stress-test
+// suggestion first: rival-mediated victories are untested (arc two item 1).
 func TestMovesSuggestsDecideWhenSettled(t *testing.T) {
 	g, fw, labels := settledGraph()
 	if labels["A"] != af.IN || labels["B"] != af.OUT {
@@ -41,9 +43,12 @@ func TestMovesSuggestsDecideWhenSettled(t *testing.T) {
 	}
 
 	mv := Moves(g, fw, labels, "I", nil)
-	first := mv.Moves[0]
-	if first.Move != "decide" || first.Args[0] != "I" || first.Args[1] != "A" {
-		t.Fatalf("want decide I A first, got %+v", first)
+	if mv.Moves[0].Move != "object" || mv.Moves[0].Args[0] != "A" {
+		t.Fatalf("want stress-test object A first, got %+v", mv.Moves[0])
+	}
+	second := mv.Moves[1]
+	if second.Move != "decide" || second.Args[0] != "I" || second.Args[1] != "A" {
+		t.Fatalf("want decide I A second, got %+v", second)
 	}
 
 	// Already decided -> no decide suggestion.

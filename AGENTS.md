@@ -39,10 +39,14 @@ Over MCP, run `dlktk mcp` — one tool per verb, same envelopes, errors as
      position. `decide` them (or surface them to a human if deciding is not
      your call).
    - `unpopulated`: issues with no positions. `propose` one.
-   - `untested`: positions that are IN only because nobody ever attacked them.
-     **IN by silence is unexamined, not vindicated** — stress-test these
-     (object, or find the strongest objection and state it) before anyone
-     decides on them.
+   - `untested`: issues about to close on a winner that never faced a
+     substantive objection — one from another author that participates in the
+     defeat relation. select_one rival edges, self-objections, and
+     preference-excused attacks don't count. **IN by silence is unexamined,
+     not vindicated** — stress-test these (object, or find the strongest
+     objection and state it) before anyone decides on them. Only
+     decide-adjacent winners appear here; mid-divergence every fresh position
+     is untested by design, so `status` marks the rest per position.
    - `assumptions`: premises recorded with `assume` that nobody has examined.
      Support or object to them; the biggest reframes start here.
 2. **`moves <issue>`** — the legal, useful moves for one issue, each with its
@@ -86,19 +90,36 @@ run a divergence phase before any convergent move:
   synthesize / reframe / assume / raise --from) before stating any preference.
 - **Rotate a devil's advocate**: each round, one persona must object to the
   strongest currently-untested IN position (the agenda's `untested` section
-  points at it).
+  names the decide-adjacent one; `status` marks the rest). The objection must
+  come from a *different author* than the position — a self-objection does not
+  count as a test, and preferring the position over its objection un-tests it.
 
 **Stalemates have three exits, in this order of consideration:**
 
 1. `synthesize` — recombine the deadlocked rivals into a hybrid (lineage
    recorded). Honest caveat: the hybrid *joins* the rivalry (the stalemate
    becomes N+1-way) until the parents are conceded or a preference/audience
-   elevates it.
+   elevates it. **A synthesis that drops nothing is a bundle** — record what
+   the hybrid excludes with `--drops "<text>"` (one per parent; the move
+   warns at ≥3 parents with none, and deciding it as-is draws
+   `bundle_synthesis`). The hybrid also **inherits its parents' undefeated
+   objections as open questions** (`show`/`why`/`moves` list them,
+   transitively): discharge each on the record — re-aim it with
+   `object <hybrid> "<still applies because…>" --answers <objection-id>`, or
+   dismiss it with `support <hybrid> "<escapes it because…>" --answers
+   <objection-id>`. A hybrid must not enter the arena cleaner than its
+   content.
 2. `reframe` — if the deadlock signals a false dichotomy, replace the framing
    (`--basis` required; positions do not carry over; the old framing leaves
    the agenda and the lineage is recorded).
 3. `prefer` — an honest value call, when the options really are exhaustive and
-   the values really do decide.
+   the values really do decide. **The subsumption dodge is flagged:** burying
+   a parent under its own hybrid (`prefer <hybrid> <parent> --basis
+   subsumption`) while the parent's inherited questions are open warns on the
+   move result and draws `self_elevated_synthesis` from `check --strict` —
+   if the hybrid truly contains the parent, the parent's unanswered critics
+   apply to it. Address the questions first (with ≥1 address from an author
+   other than the hybrid's), then prefer.
 
 ## Values and audiences (for multi-stakeholder questions)
 
@@ -166,6 +187,16 @@ For open-ended / wicked questions, add the generative personas:
 - **Stakeholder advocates** — one per value: each declares its `audience`
   ranking, tags its contributions with `--promotes`, and argues its corner;
   `audiences` then shows what survives everyone.
+- **Adopter** — argues from what a real team will actually sustain. Tags its
+  own objections with `--promotes adoptability` and may declare an
+  `adoptability`-first `audience`. Its obligation is **conditional and
+  substantive**: when a synthesis retains ≥2 parent mechanisms (read the
+  `--drops` record — what was *not* dropped was retained), the Adopter must
+  object with a **cost model** — who does the added work, when, and what they
+  stop doing — not a slogan. Run the Adopter under a different `--author`
+  than the synthesis author (a self-objection does not count as a test), and
+  where the harness allows, as a separate agent process whose only context is
+  the exported graph.
 
 A minimal deliberation: each persona in turn reads `agenda` + `moves`, makes
 at most one move, and passes. Stop when the agenda is empty, a stalemate
@@ -180,6 +211,11 @@ exploration reads.
 - `check [--all] [--strict]` in CI: exit 5 means a recorded decision has
   drifted (its position is no longer justified) — re-argue or supersede it.
   `--strict` also fails on the warnings: lingering stalemates, decisions whose
-  position was never attacked (`untested_decision`), decisions past their
-  `--review-by` horizon (`review_due`), and decisions resting on a defeated
-  assumption (`defeated_assumption`).
+  position never faced a substantive objection (`untested_decision` — rival
+  edges, self-objections, and preference-excused attacks don't count),
+  decisions past their `--review-by` horizon (`review_due`), decisions
+  resting on a defeated assumption (`defeated_assumption`), a hybrid
+  preferred over a parent whose objections it never answered
+  (`self_elevated_synthesis` — current-graph: a conceded address re-arms it),
+  and a decided ≥3-parent synthesis with no recorded drops
+  (`bundle_synthesis`).

@@ -216,12 +216,26 @@ func setCurrent(disc string) error {
 
 // emit prints id (or a json envelope) for a move result.
 func emitID(kind, id string) {
+	emitIDWarnings(kind, id, nil)
+}
+
+// emitIDWarnings prints a move result carrying advisory warnings. Warnings
+// ride in the JSON envelope (an agent must not need stderr to see them) and
+// print as marked lines in text mode.
+func emitIDWarnings(kind, id string, warnings []string) {
 	if wantJSON() {
-		out, _ := render.JSON(map[string]string{"id": id})
+		v := map[string]any{"id": id}
+		if len(warnings) > 0 {
+			v["warnings"] = warnings
+		}
+		out, _ := render.JSON(v)
 		fmt.Println(out)
 		return
 	}
 	fmt.Printf("%s %s%s\n", kind, ibis.PrefixFor(kindOf(kind)), id)
+	for _, w := range warnings {
+		fmt.Printf("  ⚠ %s\n", w)
+	}
 }
 
 func kindOf(label string) ibis.Kind {
@@ -1227,37 +1241,38 @@ func cmdPropose() *cobra.Command {
 }
 
 func cmdSynthesize() *cobra.Command {
-	var froms []string
+	var froms, drops []string
 	var promotes string
 	c := &cobra.Command{
 		Use:   "synthesize <issue> <text>",
-		Short: "propose a hybrid position recombining two or more existing positions (lineage recorded)",
+		Short: "propose a hybrid position recombining two or more existing positions (lineage recorded; say what it drops)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withMover(func(disc string, m *proto.Mover) error {
-				idv, err := m.Synthesize(disc, args[0], args[1], froms, promotes)
+				idv, warnings, err := m.Synthesize(disc, args[0], args[1], froms, promotes, drops)
 				if err != nil {
 					return err
 				}
-				emitID("position", idv)
+				emitIDWarnings("position", idv, warnings)
 				return nil
 			})
 		},
 	}
 	c.Flags().StringArrayVar(&froms, "from", nil, "parent position id (repeat; at least two)")
+	c.Flags().StringArrayVar(&drops, "drops", nil, "what the hybrid excludes from its parents (repeat, ideally one per parent) — a synthesis that drops nothing is a bundle")
 	c.Flags().StringVar(&promotes, "promotes", "", "the value the hybrid promotes")
 	return c
 }
 
 func cmdSupport() *cobra.Command {
-	var promotes string
+	var promotes, answers string
 	c := &cobra.Command{
 		Use:   "support <target> <text>",
 		Short: "argue in support of a position or argument",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withMover(func(disc string, m *proto.Mover) error {
-				idv, err := m.Support(disc, args[0], args[1], promotes)
+				idv, err := m.Support(disc, args[0], args[1], promotes, answers)
 				if err != nil {
 					return err
 				}
@@ -1267,18 +1282,19 @@ func cmdSupport() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&promotes, "promotes", "", "the value this argument promotes (audience lens input)")
+	c.Flags().StringVar(&answers, "answers", "", "parent objection this support dismisses on a synthesis (records an addresses link)")
 	return c
 }
 
 func cmdObject() *cobra.Command {
-	var promotes string
+	var promotes, answers string
 	c := &cobra.Command{
 		Use:   "object <target> <text>",
 		Short: "object to a position or argument",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withMover(func(disc string, m *proto.Mover) error {
-				idv, err := m.Object(disc, args[0], args[1], promotes)
+				idv, err := m.Object(disc, args[0], args[1], promotes, answers)
 				if err != nil {
 					return err
 				}
@@ -1288,6 +1304,7 @@ func cmdObject() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&promotes, "promotes", "", "the value this argument promotes (audience lens input)")
+	c.Flags().StringVar(&answers, "answers", "", "parent objection this objection re-aims at a synthesis (records an addresses link)")
 	return c
 }
 
@@ -1402,11 +1419,11 @@ func cmdPrefer() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withMover(func(disc string, m *proto.Mover) error {
-				idv, err := m.Prefer(disc, args[0], args[1], basis)
+				idv, warnings, err := m.Prefer(disc, args[0], args[1], basis)
 				if err != nil {
 					return err
 				}
-				emitID("preference", idv)
+				emitIDWarnings("preference", idv, warnings)
 				return nil
 			})
 		},

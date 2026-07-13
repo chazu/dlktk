@@ -88,11 +88,11 @@ func TestConcurrentPreferCannotCreateCycle(t *testing.T) {
 
 	errs := make(chan error, 2)
 	go func() {
-		_, err := agentX.Prefer("disc-1", posA, posB, "throughput")
+		_, _, err := agentX.Prefer("disc-1", posA, posB, "throughput")
 		errs <- err
 	}()
 	go func() {
-		_, err := agentY.Prefer("disc-1", posB, posA, "simplicity")
+		_, _, err := agentY.Prefer("disc-1", posB, posA, "simplicity")
 		errs <- err
 	}()
 
@@ -144,10 +144,10 @@ func TestRoleAutoRecordsRoster(t *testing.T) {
 	s, _, _, posA, _ := fixture(t) // fixture's mover has no role
 
 	sec := New(s, "alice", "Security")
-	if _, err := sec.Object("disc-1", posA, "threat model gap", ""); err != nil {
+	if _, err := sec.Object("disc-1", posA, "threat model gap", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sec.Object("disc-1", posA, "second objection", ""); err != nil {
+	if _, err := sec.Object("disc-1", posA, "second objection", "", ""); err != nil {
 		t.Fatal(err)
 	}
 

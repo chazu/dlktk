@@ -20,13 +20,15 @@ import (
 
 // Finding kinds.
 const (
-	DecisionDrift      = "decision_drift"      // decided position no longer IN (error)
-	PreferenceCycle    = "preference_cycle"    // stored preferences cyclic (error)
-	StoreInvariant     = "store_invariant"     // e.g. duplicate current node ids (error)
-	Stalemate          = "stalemate"           // all positions UNDEC (warning)
-	UntestedDecision   = "untested_decision"   // decided position never attacked (warning)
-	ReviewDue          = "review_due"          // decision's review horizon has passed (warning)
-	DefeatedAssumption = "defeated_assumption" // decided position rests on an OUT assumption (warning)
+	DecisionDrift         = "decision_drift"          // decided position no longer IN (error)
+	PreferenceCycle       = "preference_cycle"        // stored preferences cyclic (error)
+	StoreInvariant        = "store_invariant"         // e.g. duplicate current node ids (error)
+	Stalemate             = "stalemate"               // all positions UNDEC (warning)
+	UntestedDecision      = "untested_decision"       // decided position never substantively attacked (warning)
+	ReviewDue             = "review_due"              // decision's review horizon has passed (warning)
+	DefeatedAssumption    = "defeated_assumption"     // decided position rests on an OUT assumption (warning)
+	SelfElevatedSynthesis = "self_elevated_synthesis" // hybrid preferred over a parent whose objections it never answered (warning)
+	BundleSynthesis       = "bundle_synthesis"        // decided ≥3-parent synthesis with no recorded drops (warning)
 )
 
 // Finding is one problem (or warning) detected in a discussion.
@@ -117,6 +119,10 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 		return nil, err
 	}
 
+	// Nodes whose untested_decision fires, for the item-3 suppression rule:
+	// one defect, one finding (untested wins over self-elevated).
+	untestedNodes := map[string]bool{}
+
 	for _, issue := range g.Issues() {
 		st := render.Status(g, fw, labels, issue, decs)
 		if d := st.Decided; d != nil && !d.Override {
@@ -131,11 +137,24 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 		}
 		if d := st.Decided; d != nil {
 			// A decision that survived zero tests is the kind most likely to
-			// rot: IN by silence, not by surviving attack.
-			if labels[d.Position] == af.IN && len(attackersOf(fw, d.Position)) == 0 {
+			// rot: IN by silence, not by surviving attack. Substantive means
+			// an objection from another author that participates in the
+			// defeat relation — select_one rival edges, self-objections, and
+			// preference-excused attacks don't count (wicked-problems-2.md
+			// item 1).
+			if labels[d.Position] == af.IN && !render.Tested(g, fw, d.Position) {
+				untestedNodes[d.Position] = true
 				out = append(out, Finding{
 					Kind: UntestedDecision, Severity: "warning", Discussion: disc, Issue: issue, Node: d.Position,
-					Detail: fmt.Sprintf("decided position %s was never attacked; its IN label is unexamined, not vindicated — stress-test it", d.Position),
+					Detail: fmt.Sprintf("decided position %s never faced a substantive objection (rival edges, self-objections, and preference-excused attacks don't count); its IN label is unexamined, not vindicated — stress-test it", d.Position),
+				})
+			}
+			// A decided synthesis of three or more parents that records no
+			// drops is a bundle wearing a synthesis's clothes (item 4).
+			if parents := g.SynthesisParents(d.Position); len(parents) >= 3 && len(g.Nodes[d.Position].Drops) == 0 {
+				out = append(out, Finding{
+					Kind: BundleSynthesis, Severity: "warning", Discussion: disc, Issue: issue, Node: d.Position,
+					Detail: fmt.Sprintf("decided synthesis %s recombines %d parents and records no drops — a synthesis that drops nothing is a bundle; state what it excludes (concede and restate with --drops, or supersede)", d.Position, len(parents)),
 				})
 			}
 			// Temporal drift: the recorded re-examination horizon has passed.
@@ -163,20 +182,45 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 			})
 		}
 	}
+
+	// Self-elevated syntheses (item 3): a stored preference burying a parent
+	// under its own hybrid while the parent's undefeated objections are not
+	// answered on the hybrid. A current-graph property — an addressing node
+	// conceded after the preference re-arms it. Suppressed when the winner
+	// already carries untested_decision (one defect, one finding).
+	seen := map[[2]string]bool{}
+	for _, p := range g.Preferences {
+		pair := [2]string{p.Winner, p.Loser}
+		if seen[pair] || untestedNodes[p.Winner] {
+			continue
+		}
+		seen[pair] = true
+		open, flagged := render.SelfElevation(g, labels, p.Winner, p.Loser)
+		if !flagged {
+			continue
+		}
+		detail := "all recorded addresses are self-authored"
+		if len(open) > 0 {
+			detail = "open: " + strings.Join(open, ", ")
+		}
+		out = append(out, Finding{
+			Kind: SelfElevatedSynthesis, Severity: "warning", Discussion: disc, Issue: issueOf(g, p.Winner), Node: p.Winner,
+			Detail: fmt.Sprintf("synthesis %s is preferred over its parent %s, but the parent's undefeated objections are not answered on the hybrid (%s) — object/support %s --answers <id>", p.Winner, p.Loser, detail, p.Winner),
+		})
+	}
 	return out, nil
 }
 
-// attackersOf lists the distinct attackers of a node in the raw attack relation.
-func attackersOf(fw *af.Framework, node string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, e := range fw.Attack {
-		if e.To == node && !seen[e.From] {
-			seen[e.From] = true
-			out = append(out, e.From)
+// issueOf returns the issue a position responds to (first, if several).
+func issueOf(g *ibis.Graph, position string) string {
+	for _, l := range g.Links {
+		if l.Rel == ibis.RespondsTo && l.Src == position {
+			if n, ok := g.Nodes[l.Dst]; ok && n.Kind == ibis.Issue {
+				return l.Dst
+			}
 		}
 	}
-	return out
+	return ""
 }
 
 // defeatedAssumptions returns the OUT-labelled assumption nodes on the

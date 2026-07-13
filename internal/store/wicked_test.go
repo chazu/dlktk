@@ -35,7 +35,7 @@ func TestWickedRelationsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Synthesize("d", issue, "hybrid", []string{a, b}, ""); err != nil {
+	if _, _, err := m.Synthesize("d", issue, "hybrid", []string{a, b}, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.Assume("d", a, "read-heavy workload"); err != nil {

@@ -22,6 +22,7 @@ const (
 	ObjectsTo   Rel = "objects_to"
 	Synthesizes Rel = "synthesizes" // hybrid position -> parent position (lineage; never reaches the evaluator)
 	RaisedFrom  Rel = "raised_from" // issue -> the position/argument that revealed it (provenance; never reaches the evaluator)
+	Addresses   Rel = "addresses"   // hybrid-side argument -> a parent's objection it answers (discharge; never reaches the evaluator)
 )
 
 // Cardinality of an issue: select_one positions are mutually exclusive; open
@@ -39,13 +40,17 @@ const (
 const TagAssumption = "assumption"
 
 // Node is an IBIS node. Stored as a dlktk/node fact (args = these fields).
+// Drops records what a synthesis explicitly excludes from its parents (one
+// entry per exclusion) — pure metadata, rendered by show/tree; a synthesis
+// that drops nothing is a bundle (wicked-problems-2.md item 4).
 type Node struct {
-	ID     string `json:"id"`
-	Disc   string `json:"disc"`
-	Kind   Kind   `json:"kind"`
-	Text   string `json:"text"`
-	Author string `json:"author"`
-	Tag    string `json:"tag,omitempty"` // "assumption" only, for now
+	ID     string   `json:"id"`
+	Disc   string   `json:"disc"`
+	Kind   Kind     `json:"kind"`
+	Text   string   `json:"text"`
+	Author string   `json:"author"`
+	Tag    string   `json:"tag,omitempty"`   // "assumption" only, for now
+	Drops  []string `json:"drops,omitempty"` // syntheses only
 }
 
 // Link is an IBIS link. Stored as a dlktk/link fact.
@@ -206,6 +211,40 @@ func (g *Graph) ReframedTo(issue string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// SynthesisParents returns the direct parents of a synthesis (its synthesizes
+// out-links), sorted; nil for a non-synthesis.
+func (g *Graph) SynthesisParents(node string) []string {
+	var out []string
+	for _, l := range g.Links {
+		if l.Rel == Synthesizes && l.Src == node {
+			out = append(out, l.Dst)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// SynthesisAncestors returns the transitive closure of a node's synthesizes
+// lineage, sorted — chained syntheses (H2 = H1+C, H1 = A+B) reach A and B, so
+// chaining cannot launder a parent's critics (wicked-problems-2.md item 2).
+func (g *Graph) SynthesisAncestors(node string) []string {
+	seen := map[string]bool{}
+	stack := g.SynthesisParents(node)
+	var out []string
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[cur] {
+			continue
+		}
+		seen[cur] = true
+		out = append(out, cur)
+		stack = append(stack, g.SynthesisParents(cur)...)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // IsAFNode reports whether a node participates in the argumentation framework

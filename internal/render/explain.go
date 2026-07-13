@@ -29,13 +29,16 @@ type Because struct {
 	Reason        string `json:"reason"`
 }
 
-// WhyView is the explanation envelope for one node (design §8.3).
+// WhyView is the explanation envelope for one node (design §8.3). A synthesis
+// additionally lists its inherited questions — the parents' undefeated
+// objections it must answer on the record (item 2).
 type WhyView struct {
-	Node    string           `json:"node"`
-	Text    string           `json:"text"`
-	Label   string           `json:"label"`
-	Because []Because        `json:"because"`
-	ToFlip  []MoveSuggestion `json:"to_flip"`
+	Node               string              `json:"node"`
+	Text               string              `json:"text"`
+	Label              string              `json:"label"`
+	Because            []Because           `json:"because"`
+	InheritedQuestions []InheritedQuestion `json:"inherited_questions,omitempty"`
+	ToFlip             []MoveSuggestion    `json:"to_flip"`
 }
 
 // MovesView is the legal-move list for an issue.
@@ -64,10 +67,12 @@ type IssueRef struct {
 // AgendaView is the worklist that drives a discussion to closure — and keeps
 // its openings honest: contested (UNDEC) nodes that need argument or
 // preference, issues whose labelling has settled on a unique justified
-// position and only await a decide, issues with no positions at all, positions
-// that are IN only because nobody ever attacked them (stress-test before
-// deciding), and assumptions nobody has examined. Nodes under a reframed
-// issue's dead framing are excluded throughout: the question has moved.
+// position and only await a decide, issues with no positions at all, ready
+// winners that never faced a substantive objection (untested — stress-test
+// before deciding; surfaced only when decide-adjacent, since mid-divergence
+// every fresh position is untested by design), and assumptions nobody has
+// examined. Nodes under a reframed issue's dead framing are excluded
+// throughout: the question has moved.
 type AgendaView struct {
 	Undecided   []NodeRef  `json:"undecided"`
 	Ready       []IssueRef `json:"ready"`
@@ -87,23 +92,40 @@ func Why(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, node strin
 			Reason:        attackReason(g, fw, b, node),
 		})
 	}
+	v.InheritedQuestions = InheritedQuestions(g, labels, node)
 	v.ToFlip = toFlip(g, fw, labels, node)
 	return v
 }
 
 // Moves enumerates legal, useful next moves for an issue: decide when the
 // labelling has settled (so the loop has a terminal move) — preceded by a
-// stress-test suggestion when the sole justified position was never attacked —
-// propose, the generative exits from a stalemate (synthesize / reframe), plus
-// the flip suggestions for each of its positions.
+// stress-test suggestion when the winner was never substantively attacked or
+// is a synthesis with open inherited questions (one composite prompt, not
+// three uncoordinated nags) — propose, the generative exits from a stalemate
+// (synthesize / reframe), plus the flip suggestions for each of its positions.
 func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue string, decs []ibis.Decision) MovesView {
 	mv := MovesView{Issue: issue}
 	st := Status(g, fw, labels, issue, decs)
+	// Live syntheses with open inherited questions get the composite
+	// stress-test prompt whatever their label: the questions are work.
+	prompted := map[string]bool{}
+	for _, p := range positionsFor(g, issue) {
+		if labels[p] == af.OUT {
+			continue
+		}
+		if open := openQuestions(InheritedQuestions(g, labels, p)); len(open) > 0 {
+			prompted[p] = true
+			mv.Moves = append(mv.Moves, MoveSuggestion{
+				Move: "object", Args: []string{p},
+				Effect: stressTestEffect(p, open),
+			})
+		}
+	}
 	if pos, ok := readyToDecide(g, labels, issue, decs); ok {
-		if len(attackersOf(fw, pos)) == 0 {
+		if !Tested(g, fw, pos) && !prompted[pos] {
 			mv.Moves = append(mv.Moves, MoveSuggestion{
 				Move: "object", Args: []string{pos},
-				Effect: fmt.Sprintf("stress-test %s before deciding: it is IN by silence (never attacked), not by surviving attack", pos),
+				Effect: fmt.Sprintf("stress-test %s before deciding: it is IN without a substantive objection (rival edges and self-objections don't count), not by surviving attack", pos),
 			})
 		}
 		mv.Moves = append(mv.Moves, MoveSuggestion{
@@ -121,7 +143,7 @@ func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue st
 		}
 		mv.Moves = append(mv.Moves,
 			MoveSuggestion{Move: "synthesize", Args: args,
-				Effect: "recombine the deadlocked rivals into a hybrid — note it joins the rivalry (stalemate becomes N+1-way) until the parents are conceded or a preference/audience elevates it"},
+				Effect: "recombine the deadlocked rivals into a hybrid — note it joins the rivalry (stalemate becomes N+1-way) until the parents are conceded or a preference/audience elevates it; a synthesis that drops nothing is a bundle — record exclusions with --drops"},
 			MoveSuggestion{Move: "reframe", Args: []string{issue},
 				Effect: "replace the framing if the deadlock signals a false dichotomy (positions do not carry over; lineage is recorded)"},
 		)
@@ -133,9 +155,9 @@ func Moves(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue st
 }
 
 // Agenda returns the discussion's worklist: UNDEC nodes (sorted by id), issues
-// ready to decide, issues with no positions yet, untested justified positions,
-// and unexamined assumptions. Everything under a reframed issue's dead framing
-// is excluded.
+// ready to decide, issues with no positions yet, untested decide-adjacent
+// winners, and unexamined assumptions. Everything under a reframed issue's
+// dead framing is excluded.
 func Agenda(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, decs []ibis.Decision) AgendaView {
 	var v AgendaView
 
@@ -162,11 +184,6 @@ func Agenda(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, decs []
 		v.Undecided = append(v.Undecided, NodeRef{ID: id, Kind: string(n.Kind), Text: n.Text, Label: "UNDEC"})
 	}
 
-	decided := map[string]bool{}
-	for _, d := range decs {
-		decided[d.Issue] = true
-	}
-
 	var issues []string
 	for id, n := range g.Nodes {
 		if n.Kind == ibis.Issue && !reframed[id] {
@@ -185,19 +202,16 @@ func Agenda(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, decs []
 				Issue: issue, Text: g.Nodes[issue].Text,
 				Position: pos, PositionText: g.Nodes[pos].Text,
 			})
-		}
-		// Untested: IN by silence on a still-open issue — the winner nobody
-		// examined. (On a select_one issue with rivals, every position is
-		// attacked by the mutual-attack rule, so this fires for a sole
-		// position or open-cardinality positions — by design.)
-		if !decided[issue] {
-			for _, p := range positions {
-				if labels[p] == af.IN && len(attackersOf(fw, p)) == 0 {
-					v.Untested = append(v.Untested, IssueRef{
-						Issue: issue, Text: g.Nodes[issue].Text,
-						Position: p, PositionText: g.Nodes[p].Text,
-					})
-				}
+			// Untested: surfaced only when decide-adjacent — this issue is
+			// about to close on a winner no substantive objection ever
+			// engaged (rival edges never count). During divergence every
+			// fresh position is untested by design; flooding the section
+			// trains agents to skim it (wicked-problems-2.md item 1).
+			if !Tested(g, fw, pos) {
+				v.Untested = append(v.Untested, IssueRef{
+					Issue: issue, Text: g.Nodes[issue].Text,
+					Position: pos, PositionText: g.Nodes[pos].Text,
+				})
 			}
 		}
 	}
@@ -266,21 +280,36 @@ func toFlip(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, node st
 			if labels[b] != af.IN {
 				continue
 			}
+			// Preferring a position over its own objection excuses the test
+			// rather than answering it — say so where the move is offered,
+			// not after it lands.
 			out = append(out,
 				MoveSuggestion{Move: "object", Args: []string{b},
 					Effect: fmt.Sprintf("defeat attacker %s to reinstate %s", b, node)},
 				MoveSuggestion{Move: "prefer", Args: []string{node, b},
-					Effect: fmt.Sprintf("prefer %s over %s to block its attack", node, b)},
+					Effect: fmt.Sprintf("prefer %s over %s to block its attack — note this excuses the objection rather than answering it; %s will count as untested again", node, b, node)},
 			)
 		}
 	case af.UNDEC:
+		// Elevating an untested or question-laden position by preference is
+		// the laundering move arc two exists to catch: state one ordering,
+		// not two options.
+		untested := !Tested(g, fw, node)
+		open := openQuestions(InheritedQuestions(g, labels, node))
 		for _, b := range atk {
 			if labels[b] != af.UNDEC {
 				continue
 			}
+			effect := fmt.Sprintf("prefer %s over %s to break the tie (make %s IN)", node, b, node)
+			switch {
+			case len(open) > 0:
+				effect += fmt.Sprintf(" — address the open inherited questions on %s first, then prefer", node)
+			case untested:
+				effect += fmt.Sprintf(" — %s is untested; object first, then prefer", node)
+			}
 			out = append(out, MoveSuggestion{
 				Move: "prefer", Args: []string{node, b},
-				Effect: fmt.Sprintf("prefer %s over %s to break the tie (make %s IN)", node, b, node),
+				Effect: effect,
 			})
 		}
 	}
@@ -295,6 +324,9 @@ func WhyText(v WhyView) string {
 		prefix := fmt.Sprintf("  %s %s %s  ", cDim("←"), labelInline(r.AttackerLabel), cID(r.Attacker))
 		b.WriteString(para(prefix, quote(r.AttackerText)) + "\n")
 		b.WriteString(strings.Repeat(" ", visLen(prefix)) + cDim(r.Reason) + "\n")
+	}
+	if len(v.InheritedQuestions) > 0 {
+		b.WriteString(questionsText(v.InheritedQuestions))
 	}
 	if len(v.ToFlip) > 0 {
 		fmt.Fprintf(&b, "  %s%s\n", cBold("to flip "+v.Node), cDim(" (currently "+v.Label+") — copy, fill the placeholders, run:"))
@@ -350,7 +382,7 @@ func AgendaText(v AgendaView) string {
 		}
 	}
 	if len(v.Untested) > 0 {
-		b.WriteString(cBold("untested (IN by silence — stress-test before deciding):") + "\n")
+		b.WriteString(cBold("untested (about to win without facing a substantive objection — stress-test before deciding):") + "\n")
 		for _, r := range v.Untested {
 			b.WriteString(para(fmt.Sprintf("  %s  ", pid(r.Position)), quote(r.PositionText)) + "\n")
 			fmt.Fprintf(&b, "      %s %s  %s\n", cDim("on"), cID(ibis.PrefixFor(ibis.Issue)+r.Issue), quote(r.Text))

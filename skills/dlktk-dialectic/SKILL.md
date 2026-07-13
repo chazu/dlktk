@@ -26,7 +26,9 @@ If you just need a fact lookup or a quick opinion, this is overkill.
 - Three node kinds: **issue** (a question), **position** (a candidate answer),
   **argument** (a claim bearing on a position *or another argument*).
 - Links: `responds_to` (position→issue), `objects_to` (an **attack**, feeds the
-  labelling), `supports` (rationale only — **the engine ignores it**).
+  labelling), `supports` (rationale only — **the engine ignores it**),
+  `synthesizes` (hybrid→parent lineage), `addresses` (an answer→the parent
+  objection it discharges). The last three never reach the evaluator.
 - Every position/argument gets a label: **IN** (justified), **OUT** (defeated),
   **UNDEC** (genuinely contested — the live agenda).
 - Objecting to an objection **reinstates** its target. That recursion is the
@@ -74,8 +76,12 @@ a new position contradicts a standing one). For open-ended questions add the
 generative personas: **Reframer** (challenges framings with `reframe` and
 `raise --from`), **Analogist** (mines prior discussions for candidate
 positions, cited by value), **First-Principles** (states premises with
-`assume`, then attacks them), and per-value **stakeholder advocates** (each
-declares an `audience` ranking and tags moves with `--promotes`).
+`assume`, then attacks them), per-value **stakeholder advocates** (each
+declares an `audience` ranking and tags moves with `--promotes`), and the
+**Adopter** (argues from what a real team will sustain; when a synthesis
+retains ≥2 parent mechanisms it must object with a cost model — who does the
+added work and what they stop doing — under an author distinct from the
+synthesis author).
 
 ## The loop
 
@@ -84,8 +90,11 @@ declares an `audience` ranking and tags moves with `--promotes`).
    - `ready`: settled on one justified position — `decide` it (or surface to a
      human if deciding isn't your call).
    - `unpopulated`: issues with no positions — `propose` one.
-   - `untested`: positions IN only because nobody attacked them. **IN by
-     silence is unexamined, not vindicated** — stress-test before deciding.
+   - `untested`: issues about to close on a winner no substantive objection
+     ever engaged (rival edges, self-objections, and preference-excused
+     attacks don't count). **IN by silence is unexamined, not vindicated** —
+     stress-test before deciding. Only decide-adjacent winners appear here;
+     `status` marks the rest per position.
    - `assumptions`: premises (`assume`) nobody has examined — support or
      object; the biggest reframes start here.
 2. **`moves <issue>`** — the legal, useful next moves, each with its effect. In
@@ -113,7 +122,10 @@ survive every declared value ranking).
 - **Each persona makes at least one generative move** (propose / synthesize /
   reframe / assume / raise --from) before stating any preference.
 - **Rotate a devil's advocate** against the strongest untested IN position
-  (the agenda's `untested` section points at it).
+  (the agenda's `untested` section names the decide-adjacent one; `status`
+  marks the rest). The objection must come from a *different author* than the
+  position — a self-objection does not count as a test, and preferring the
+  position over its objection un-tests it.
 - **Every wicked problem is a symptom of another problem**: when an argument
   reveals a deeper question, `raise "<question>" --from <that node>` so the
   provenance is recorded and the sub-issue nests under it in `tree`.
@@ -128,14 +140,24 @@ survive every declared value ranking).
   rationale the evaluator ignores. Defend a position by defeating its attacker
   (object to the objection); reinstatement does the rest.
 - **Stalemates have three exits — try them in this order.**
-  1. `synthesize <issue> "<hybrid>" --from <p1> --from <p2>` — recombine the
-     rivals with recorded lineage. Caveat: the hybrid *joins* the rivalry
-     until the parents are conceded or a preference/audience elevates it.
+  1. `synthesize <issue> "<hybrid>" --from <p1> --from <p2> --drops "<what it
+     excludes>"` — recombine the rivals with recorded lineage. Caveat: the
+     hybrid *joins* the rivalry until the parents are conceded or a
+     preference/audience elevates it. **A synthesis that drops nothing is a
+     bundle** (the move warns at ≥3 parents with no `--drops`; deciding it
+     as-is draws `bundle_synthesis`). The hybrid **inherits its parents'
+     undefeated objections as open questions** (`show`/`why`/`moves` list
+     them): re-aim one with `object <hybrid> "…" --answers <objection-id>` or
+     dismiss it with `support <hybrid> "…" --answers <objection-id>` — a
+     hybrid must not enter the arena cleaner than its content.
   2. `reframe <issue> "<new framing>" --basis <label>` — when the deadlock is
      a false dichotomy. Positions don't carry over; the dead framing leaves
      the agenda; lineage is recorded.
   3. `prefer <winner> <loser> --basis <label>` — an honest value call, when
-     the options really are exhaustive.
+     the options really are exhaustive. Burying a parent under its own hybrid
+     while its inherited questions are open warns on the move and draws
+     `self_elevated_synthesis` — address the questions first (≥1 address by
+     another author), then prefer.
   A new argument helps only if it attacks from *outside* the cycle.
 - **Name the values, then the audiences.** Tag contributions with `--promotes
   <value>` (or `promote <node> <value>` on your own nodes); record stakeholder
@@ -181,9 +203,13 @@ objections); or a move budget runs out.
 - `dlktk check [--all] [--strict]` in CI: exit `5` means a recorded decision has
   drifted (its position is no longer justified) — re-argue it or `supersede` it.
   This is what turns a decision from archaeology into a living constraint.
-  `--strict` also fails on warnings: stalemates, never-attacked decisions
-  (`untested_decision`), expired review horizons (`review_due`), and decisions
-  resting on defeated assumptions (`defeated_assumption`).
+  `--strict` also fails on warnings: stalemates, decisions never substantively
+  attacked (`untested_decision` — rival edges, self-objections, and
+  preference-excused attacks don't count), expired review horizons
+  (`review_due`), decisions resting on defeated assumptions
+  (`defeated_assumption`), a hybrid preferred over a parent whose objections
+  it never answered (`self_elevated_synthesis`), and a decided ≥3-parent
+  synthesis with no recorded drops (`bundle_synthesis`).
 
 ## Postmortem
 

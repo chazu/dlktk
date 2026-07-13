@@ -41,8 +41,8 @@ func TestReviewDueFiresAfterHorizon(t *testing.T) {
 	s, m := open(t)
 	issue, _ := m.Raise("d", "q?", "", "", "")
 	pos, _ := m.Propose("d", issue, "yes", "")
-	obj, _ := m.Object("d", pos, "objection", "")
-	if _, err := m.Object("d", obj, "rebuttal", ""); err != nil {
+	obj, _ := m.Object("d", pos, "objection", "", "")
+	if _, err := m.Object("d", obj, "rebuttal", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	horizon := time.Now().Add(time.Hour).Unix()
@@ -72,8 +72,8 @@ func TestDefeatedAssumptionWarns(t *testing.T) {
 	s, m := open(t)
 	issue, _ := m.Raise("d", "q?", "", "", "")
 	pos, _ := m.Propose("d", issue, "yes", "")
-	obj, _ := m.Object("d", pos, "objection", "")
-	if _, err := m.Object("d", obj, "rebuttal", ""); err != nil {
+	obj, _ := m.Object("d", pos, "objection", "", "")
+	if _, err := m.Object("d", obj, "rebuttal", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	assumption, err := m.Assume("d", pos, "load stays flat")
@@ -86,7 +86,7 @@ func TestDefeatedAssumptionWarns(t *testing.T) {
 	if findKind(run(t, s), DefeatedAssumption) != 0 {
 		t.Fatal("assumption not yet defeated; no warning expected")
 	}
-	if _, err := m.Object("d", assumption, "traffic doubled last quarter", ""); err != nil {
+	if _, err := m.Object("d", assumption, "traffic doubled last quarter", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	v := run(t, s)

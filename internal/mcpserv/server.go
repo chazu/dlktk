@@ -38,13 +38,19 @@ assume/prefer/decide) -> re-read. Use why/show/explain to understand a label,
 whatif/crux to explore counterfactuals without writing, worlds to see the
 coherent stances a contested issue admits, audiences to see which conclusions
 survive every declared value ranking, and search to check whether a claim
-already exists before adding a duplicate. An IN position with no attackers is
-untested, not vindicated — stress-test it before deciding. Stalemates have
+already exists before adding a duplicate. An IN position that never faced a
+substantive objection — one from another author that participates in the
+defeat relation; select_one rival edges never count — is untested, not
+vindicated: stress-test it before deciding. Stalemates have
 three exits: prefer (a value call), synthesize (a recorded hybrid), or reframe
-(replace a mis-framed question; basis required). Decisions on decided issues
-must be overturned with supersede (basis required), never re-decided; check
-verifies recorded decisions still stand and their review horizons have not
-passed.`
+(replace a mis-framed question; basis required). A synthesis inherits its
+parents' undefeated objections as open questions (shown by show/why/moves) —
+discharge them with object/support --answers <objection-id> — and should say
+what it drops (--drops; a synthesis that drops nothing is a bundle). Prefer
+warns when it would bury a parent under its own hybrid with those questions
+open. Decisions on decided issues must be overturned with supersede (basis
+required), never re-decided; check verifies recorded decisions still stand
+and their review horizons have not passed.`
 
 type srv struct {
 	s             *store.Store
@@ -245,6 +251,7 @@ type synthesizeArgs struct {
 	Issue      string   `json:"issue" jsonschema:"issue id"`
 	Text       string   `json:"text" jsonschema:"the hybrid position"`
 	From       []string `json:"from" jsonschema:"two or more parent position ids on the same issue"`
+	Drops      []string `json:"drops,omitempty" jsonschema:"what the hybrid excludes from its parents (ideally one per parent) — a synthesis that drops nothing is a bundle"`
 	Promotes   string   `json:"promotes,omitempty" jsonschema:"the value the hybrid promotes"`
 	Author     string   `json:"author,omitempty"`
 	Role       string   `json:"role,omitempty"`
@@ -253,11 +260,11 @@ type synthesizeArgs struct {
 func (x *srv) synthesize(ctx context.Context, req *mcp.CallToolRequest, a synthesizeArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	nid, err := x.mover(a.Author, a.Role).Synthesize(a.Discussion, a.Issue, a.Text, a.From, a.Promotes)
+	nid, warnings, err := x.mover(a.Author, a.Role).Synthesize(a.Discussion, a.Issue, a.Text, a.From, a.Promotes, a.Drops)
 	if err != nil {
 		return bad(err)
 	}
-	return ok(map[string]string{"id": nid})
+	return ok(moveResult(nid, warnings))
 }
 
 type attachArgs struct {
@@ -265,6 +272,7 @@ type attachArgs struct {
 	Target     string `json:"target" jsonschema:"position or argument id"`
 	Text       string `json:"text" jsonschema:"the claim"`
 	Promotes   string `json:"promotes,omitempty" jsonschema:"the value this argument promotes (audience lens input)"`
+	Answers    string `json:"answers,omitempty" jsonschema:"parent objection this move answers on a synthesis (records an evaluator-inert addresses link)"`
 	Author     string `json:"author,omitempty"`
 	Role       string `json:"role,omitempty"`
 }
@@ -272,7 +280,7 @@ type attachArgs struct {
 func (x *srv) support(ctx context.Context, req *mcp.CallToolRequest, a attachArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	nid, err := x.mover(a.Author, a.Role).Support(a.Discussion, a.Target, a.Text, a.Promotes)
+	nid, err := x.mover(a.Author, a.Role).Support(a.Discussion, a.Target, a.Text, a.Promotes, a.Answers)
 	if err != nil {
 		return bad(err)
 	}
@@ -282,11 +290,21 @@ func (x *srv) support(ctx context.Context, req *mcp.CallToolRequest, a attachArg
 func (x *srv) object(ctx context.Context, req *mcp.CallToolRequest, a attachArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	nid, err := x.mover(a.Author, a.Role).Object(a.Discussion, a.Target, a.Text, a.Promotes)
+	nid, err := x.mover(a.Author, a.Role).Object(a.Discussion, a.Target, a.Text, a.Promotes, a.Answers)
 	if err != nil {
 		return bad(err)
 	}
 	return ok(map[string]string{"id": nid})
+}
+
+// moveResult shapes a move's JSON result, carrying advisory warnings when the
+// engine has any (same envelope the CLI prints).
+func moveResult(id string, warnings []string) map[string]any {
+	v := map[string]any{"id": id}
+	if len(warnings) > 0 {
+		v["warnings"] = warnings
+	}
+	return v
 }
 
 func (x *srv) assume(ctx context.Context, req *mcp.CallToolRequest, a attachArgs) (*mcp.CallToolResult, any, error) {
@@ -347,11 +365,11 @@ type preferArgs struct {
 func (x *srv) prefer(ctx context.Context, req *mcp.CallToolRequest, a preferArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	pid, err := x.mover(a.Author, a.Role).Prefer(a.Discussion, a.Winner, a.Loser, a.Basis)
+	pid, warnings, err := x.mover(a.Author, a.Role).Prefer(a.Discussion, a.Winner, a.Loser, a.Basis)
 	if err != nil {
 		return bad(err)
 	}
-	return ok(map[string]string{"id": pid})
+	return ok(moveResult(pid, warnings))
 }
 
 type decideArgs struct {

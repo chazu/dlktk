@@ -21,25 +21,29 @@ type LinkView struct {
 }
 
 // NodeView is the `show` envelope: one node in full, with every incident link
-// (design §6.2).
+// (design §6.2). Syntheses additionally carry their recorded drops and their
+// inherited questions (parents' undefeated objections with discharge status).
 type NodeView struct {
-	ID       string       `json:"id"`
-	Kind     string       `json:"kind"`
-	Text     string       `json:"text"`
-	Author   string       `json:"author,omitempty"`
-	Tag      string       `json:"tag,omitempty"`      // "assumption"
-	Promotes string       `json:"promotes,omitempty"` // the value this node promotes
-	Label    string       `json:"label,omitempty"`    // AF nodes only
-	Links    []LinkView   `json:"links"`
-	Decided  *DecidedView `json:"decided,omitempty"` // issues with a standing decision
+	ID                 string              `json:"id"`
+	Kind               string              `json:"kind"`
+	Text               string              `json:"text"`
+	Author             string              `json:"author,omitempty"`
+	Tag                string              `json:"tag,omitempty"`      // "assumption"
+	Promotes           string              `json:"promotes,omitempty"` // the value this node promotes
+	Label              string              `json:"label,omitempty"`    // AF nodes only
+	Drops              []string            `json:"drops,omitempty"`    // syntheses: what the hybrid excludes
+	InheritedQuestions []InheritedQuestion `json:"inherited_questions,omitempty"`
+	Links              []LinkView          `json:"links"`
+	Decided            *DecidedView        `json:"decided,omitempty"` // issues with a standing decision
 }
 
 // Show builds the full view of one node.
 func Show(g *ibis.Graph, labels map[string]af.Label, node string, decs []ibis.Decision) NodeView {
 	n := g.Nodes[node]
-	v := NodeView{ID: n.ID, Kind: string(n.Kind), Text: n.Text, Author: n.Author, Tag: n.Tag, Promotes: g.Values[node]}
+	v := NodeView{ID: n.ID, Kind: string(n.Kind), Text: n.Text, Author: n.Author, Tag: n.Tag, Promotes: g.Values[node], Drops: n.Drops}
 	if g.IsAFNode(node) {
 		v.Label = string(labels[node])
+		v.InheritedQuestions = InheritedQuestions(g, labels, node)
 	}
 	for _, l := range g.Links {
 		switch node {
@@ -97,6 +101,12 @@ func ShowText(v NodeView) string {
 	}
 	b.WriteString(strings.Join(header, "  ") + "\n")
 	b.WriteString(para("  ", quote(v.Text)) + "\n")
+	if len(v.Drops) > 0 {
+		b.WriteString(para("  "+cDim("⊖ drops: "), cDim(strings.Join(v.Drops, " · "))) + "\n")
+	}
+	if len(v.InheritedQuestions) > 0 {
+		b.WriteString(questionsText(v.InheritedQuestions))
+	}
 	for _, l := range v.Links {
 		arrow := cDim("←")
 		if l.Dir == "out" {

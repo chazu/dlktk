@@ -47,10 +47,12 @@ func TestCleanDiscussionPasses(t *testing.T) {
 	s, m := open(t)
 	issue, _ := m.Raise("d", "q?", "", "", "")
 	pos, _ := m.Propose("d", issue, "yes", "")
-	// Battle-test the position (objection + rebuttal reinstates it) so the
-	// decision is examined, not merely unopposed.
-	obj, _ := m.Object("d", pos, "objection", "")
-	if _, err := m.Object("d", obj, "rebuttal", ""); err != nil {
+	// Battle-test the position (a cross-author objection + rebuttal reinstates
+	// it) so the decision is examined, not merely unopposed — a self-authored
+	// objection would not count (arc two item 1).
+	bob := proto.New(s, "bob", "")
+	obj, _ := bob.Object("d", pos, "objection", "", "")
+	if _, err := m.Object("d", obj, "rebuttal", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.Decide("d", issue, pos, "obvious", 0); err != nil {
@@ -71,7 +73,7 @@ func TestDecisionDrift(t *testing.T) {
 	if err := m.Decide("d", issue, pos, "looked solid", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Object("d", pos, "new constraint kills this", ""); err != nil {
+	if _, err := m.Object("d", pos, "new constraint kills this", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	v := run(t, s)
@@ -87,7 +89,7 @@ func TestOverrideDecisionIsNotDrift(t *testing.T) {
 	s, m := open(t)
 	issue, _ := m.Raise("d", "q?", "", "", "")
 	pos, _ := m.Propose("d", issue, "yes", "")
-	if _, err := m.Object("d", pos, "objection", ""); err != nil {
+	if _, err := m.Object("d", pos, "objection", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.Decide("d", issue, pos, "time-boxed call", 0); err != nil { // pos is OUT -> override

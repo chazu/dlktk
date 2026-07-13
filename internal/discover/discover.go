@@ -10,7 +10,22 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.10.0 is the wicked-problems batch (see
+// Version of the dlktk contract. 0.12.0 is the synthesis-discipline batch
+// (wicked-problems-2.md items 2-4): the evaluator-inert `addresses` relation
+// with --answers on object/support (discharging a synthesis's inherited
+// questions), inherited_questions in NodeView/WhyView and the composite
+// stress-test moves suggestion, --drops on synthesize with drops in
+// NodeView, advisory warnings on synthesize/prefer move results
+// ({id, warnings?}), and the self_elevated_synthesis / bundle_synthesis
+// strict findings. 0.11.0 hardens tested-ness (wicked-problems-2.md
+// item 1): everywhere the system asks "was this position examined?" — the
+// untested flag in IssueStatus, the agenda's untested section, the moves
+// stress-test suggestion, the untested_decision check finding — a position now
+// counts as tested only with a substantive objection: authored by someone
+// other than the position's author and participating in the defeat relation.
+// select_one rival edges and preference-neutralized objections never count,
+// and the agenda surfaces untested positions only when decide-adjacent (the
+// issue is ready). 0.10.0 is the wicked-problems batch (see
 // wicked-problems.md): the reframe/synthesize/assume/promote/audience moves,
 // raise --from, --promotes on propose/object/support, --review-by on
 // decide/supersede, the whatif/crux/worlds/audiences reads, --under on
@@ -28,7 +43,7 @@ import (
 // drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
 // supersede move (bare re-decide rejected, design §16 Q4) and
 // decided.supersedes.
-const Version = "0.10.0"
+const Version = "0.12.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -84,7 +99,7 @@ func Current() Schema {
 		Version: Version,
 		IDs:     "proquint",
 		Kinds:   []string{"issue", "position", "argument"},
-		Rels:    []string{"responds_to", "supports", "objects_to", "synthesizes", "raised_from"},
+		Rels:    []string{"responds_to", "supports", "objects_to", "synthesizes", "raised_from", "addresses"},
 		Labels:  []string{"IN", "OUT", "UNDEC"},
 		Globals: []Flag{
 			{"--format text|json", "output format; default auto: text on a terminal, json when piped (json gives the envelopes below)"},
@@ -100,11 +115,11 @@ func Current() Schema {
 			{"raise", []string{"text", "[--parent issue]", "[--from node]", "[--card select_one|open]"}, "parent must be an issue; from must be a position/argument (mutually exclusive with parent); cardinality fixed at creation, default select_one", true},
 			{"reframe", []string{"issue", "text", "--basis label", "[--card select_one|open]"}, "issue exists, not already reframed, and has no standing decision (supersede it first); basis required; positions do not carry over, lineage recorded", true},
 			{"propose", []string{"issue", "text", "[--promotes value]"}, "target must be an issue", true},
-			{"synthesize", []string{"issue", "text", "--from position", "--from position", "[--promotes value]"}, "at least two distinct parent positions, each responding to the issue; the hybrid joins the rivalry until parents are conceded or a preference/audience elevates it", true},
-			{"support", []string{"target", "text", "[--promotes value]"}, "target in {position,argument}", true},
-			{"object", []string{"target", "text", "[--promotes value]"}, "target in {position,argument}", true},
+			{"synthesize", []string{"issue", "text", "--from position", "--from position", "[--drops text]...", "[--promotes value]"}, "at least two distinct parent positions, each responding to the issue; the hybrid joins the rivalry until parents are conceded or a preference/audience elevates it; a synthesis that drops nothing is a bundle — result warns at >=3 parents with no --drops", true},
+			{"support", []string{"target", "text", "[--promotes value]", "[--answers objection-id]"}, "target in {position,argument}; --answers dismisses a parent objection on a synthesis target (inert addresses link)", true},
+			{"object", []string{"target", "text", "[--promotes value]", "[--answers objection-id]"}, "target in {position,argument}; --answers re-aims a parent objection at a synthesis target (inert addresses link)", true},
 			{"assume", []string{"target", "text"}, "target in {position,argument}; records a challengeable premise (supports link, tag=assumption; inert in the labelling)", true},
-			{"prefer", []string{"winner", "loser", "--basis label"}, "AF nodes; no preference cycle", true},
+			{"prefer", []string{"winner", "loser", "--basis label"}, "AF nodes; no preference cycle; result warns (self-elevated synthesis) when the winner subsumes the loser without answering its objections", true},
 			{"promote", []string{"node", "value"}, "AF node owned by the author; one value per node (to change, concede and restate)", true},
 			{"audience", []string{"name", "value...", "[--supersede --basis label]"}, "at least two distinct values, most important first; re-declaring a name requires --supersede with a basis", true},
 			{"decide", []string{"issue", "position", "[--basis label]", "[--review-by T]"}, "position responds_to issue; issue not already decided (overturning requires supersede); review-by must be in the future", true},
@@ -141,21 +156,23 @@ func Current() Schema {
 		},
 		ErrorEnvelope: "{error: kind, detail: string, node?: id}",
 		Envelopes: map[string]string{
-			"IssueStatus":   "{issue, issue_text, cardinality, under?, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool, untested?: bool}], undecided: [id], stalemate: bool, advice, reframed_to?, decided?: {position, basis, decider, override, supersedes?, review_by?}}",
-			"AgendaView":    "{undecided: [{id, kind, text, label}], ready: [{issue, text, position, position_text}], unpopulated: [{issue, text}], untested: [{issue, text, position, position_text}], assumptions: [{id, kind, text, label}]}",
-			"MovesView":     "{issue, moves: [{move, args: [string], effect}]}",
-			"WhyView":       "{node, text, label, because: [{attacker, attacker_text, attacker_label, reason}], to_flip: [{move, args: [string], effect}]}",
-			"NodeView":      "{id, kind, text, author?, tag?, promotes?, label?, links: [{rel, dir: in|out, peer, peer_kind, peer_text, peer_label?}], decided?: {position, basis, decider, override, supersedes?, review_by?}}",
-			"SearchView":    "{query, hits: [{discussion, id, kind, text, label?}]}",
-			"ExplainView":   "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?, audience_blocked?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override, supersedes?, review_by?}, decision_is_in: bool}",
-			"WhatIfView":    "{issue, hypotheticals: [{kind: object|prefer|without, target?, winner?, loser?, node?, summary}], flipped: [{node, text, from, to}], result: IssueStatus}",
-			"CruxView":      "{issue, cruxes: [{node, text, author?, flips: [{node, text, from, to}]}], note}",
-			"WorldsView":    "{issue, under?, worlds: [{in: [{id, kind, text, label}], distinguishing: [id]}], robust: [ref], contingent: [ref], hopeless: [ref], too_contested?: bool, note?}",
-			"AudiencesView": "{audiences: [{name, ranking: [value], author?}], issues: [{issue, text, baseline: {position: label}, by_audience: {name: {position: label}}, robust: [id], sensitive: [{position, text, verdicts: {audience|baseline: label}}]}]}",
-			"Audience":      "{disc, name, ranking: [value], basis?, author}",
-			"CheckView":     "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate|untested_decision|review_due|defeated_assumption, severity: error|warning, discussion, issue?, node?, detail}], ok: bool}",
-			"Discussion":    "{id, title, subject, created_by}",
-			"RosterView":    "{discussion, bindings: [{disc, author, role}]}",
+			"IssueStatus":       "{issue, issue_text, cardinality, under?, positions: [{id, text, label, attacked_by: [id], defeated_by: [id], reinstated: bool, untested?: bool}], undecided: [id], stalemate: bool, advice, reframed_to?, decided?: {position, basis, decider, override, supersedes?, review_by?}}",
+			"AgendaView":        "{undecided: [{id, kind, text, label}], ready: [{issue, text, position, position_text}], unpopulated: [{issue, text}], untested: [{issue, text, position, position_text}], assumptions: [{id, kind, text, label}]}",
+			"MovesView":         "{issue, moves: [{move, args: [string], effect}]}",
+			"WhyView":           "{node, text, label, because: [{attacker, attacker_text, attacker_label, reason}], inherited_questions?: [InheritedQuestion], to_flip: [{move, args: [string], effect}]}",
+			"InheritedQuestion": "{objection, objection_text, author?, parent, parent_text, addressed_by?: [id], open: bool} — a synthesis parent's undefeated objection; discharge with object/support --answers",
+			"MoveResult":        "{id, warnings?: [string]} — synthesize and prefer may carry advisory warnings; the move stands",
+			"NodeView":          "{id, kind, text, author?, tag?, promotes?, label?, drops?: [string], inherited_questions?: [InheritedQuestion], links: [{rel, dir: in|out, peer, peer_kind, peer_text, peer_label?}], decided?: {position, basis, decider, override, supersedes?, review_by?}}",
+			"SearchView":        "{query, hits: [{discussion, id, kind, text, label?}]}",
+			"ExplainView":       "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?, audience_blocked?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override, supersedes?, review_by?}, decision_is_in: bool}",
+			"WhatIfView":        "{issue, hypotheticals: [{kind: object|prefer|without, target?, winner?, loser?, node?, summary}], flipped: [{node, text, from, to}], result: IssueStatus}",
+			"CruxView":          "{issue, cruxes: [{node, text, author?, flips: [{node, text, from, to}]}], note}",
+			"WorldsView":        "{issue, under?, worlds: [{in: [{id, kind, text, label}], distinguishing: [id]}], robust: [ref], contingent: [ref], hopeless: [ref], too_contested?: bool, note?}",
+			"AudiencesView":     "{audiences: [{name, ranking: [value], author?}], issues: [{issue, text, baseline: {position: label}, by_audience: {name: {position: label}}, robust: [id], sensitive: [{position, text, verdicts: {audience|baseline: label}}]}]}",
+			"Audience":          "{disc, name, ranking: [value], basis?, author}",
+			"CheckView":         "{discussions, findings: [{kind: decision_drift|preference_cycle|store_invariant|stalemate|untested_decision|review_due|defeated_assumption|self_elevated_synthesis|bundle_synthesis, severity: error|warning, discussion, issue?, node?, detail}], ok: bool}",
+			"Discussion":        "{id, title, subject, created_by}",
+			"RosterView":        "{discussion, bindings: [{disc, author, role}]}",
 		},
 	}
 }
@@ -245,6 +262,7 @@ func CUESchema() string {
 	text:   string
 	author: string
 	tag?:   "assumption" // a challengeable premise; bookkeeping only, never reaches the evaluator
+	drops?: [...string] // syntheses: what the hybrid explicitly excludes from its parents (metadata)
 }
 
 #Link: {
@@ -252,7 +270,7 @@ func CUESchema() string {
 	disc:   string
 	src:    string
 	dst:    string
-	rel:    "responds_to" | "supports" | "objects_to" | "synthesizes" | "raised_from"
+	rel:    "responds_to" | "supports" | "objects_to" | "synthesizes" | "raised_from" | "addresses"
 	author: string
 }
 

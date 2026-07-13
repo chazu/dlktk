@@ -46,6 +46,8 @@ func TestReframeRejectsDecidedIssue(t *testing.T) {
 // errOf drops the id a two-value move returns, for wantIllegal.
 func errOf(_ string, err error) error { return err }
 
+func errOf3(_ string, _ []string, err error) error { return err }
+
 // --- raise --from ---
 
 func TestRaiseFromRecordsProvenance(t *testing.T) {
@@ -73,8 +75,8 @@ func TestRaiseFromRecordsProvenance(t *testing.T) {
 func TestSynthesizeLineageAndLegality(t *testing.T) {
 	s, m, issue, posA, posB := fixture(t)
 
-	wantIllegal(t, errOf(m.Synthesize("disc-1", issue, "hybrid", []string{posA}, "")), "one parent")
-	wantIllegal(t, errOf(m.Synthesize("disc-1", issue, "hybrid", []string{posA, posA}, "")), "duplicate parent")
+	wantIllegal(t, errOf3(m.Synthesize("disc-1", issue, "hybrid", []string{posA}, "", nil)), "one parent")
+	wantIllegal(t, errOf3(m.Synthesize("disc-1", issue, "hybrid", []string{posA, posA}, "", nil)), "duplicate parent")
 
 	other, err := m.Raise("disc-1", "other issue?", "", "", "")
 	if err != nil {
@@ -84,9 +86,9 @@ func TestSynthesizeLineageAndLegality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantIllegal(t, errOf(m.Synthesize("disc-1", issue, "hybrid", []string{posA, foreign}, "")), "parent from another issue")
+	wantIllegal(t, errOf3(m.Synthesize("disc-1", issue, "hybrid", []string{posA, foreign}, "", nil)), "parent from another issue")
 
-	hybrid, err := m.Synthesize("disc-1", issue, "mutex for writes, rwlock reads", []string{posA, posB}, "")
+	hybrid, _, err := m.Synthesize("disc-1", issue, "mutex for writes, rwlock reads", []string{posA, posB}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,6 +101,80 @@ func TestSynthesizeLineageAndLegality(t *testing.T) {
 	}
 	if links != 2 {
 		t.Fatalf("want 2 synthesizes links, got %d", links)
+	}
+}
+
+// --drops is stored on the node and the ≥3-parent no-drops case warns
+// (arc two item 4).
+func TestSynthesizeDropsAndBundleWarning(t *testing.T) {
+	s, m, issue, posA, posB := fixture(t)
+	posC, err := m.Propose("disc-1", issue, "third", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Two parents, no drops: friction-free.
+	if _, warnings, err := m.Synthesize("disc-1", issue, "two-parent", []string{posA, posB}, "", nil); err != nil || len(warnings) != 0 {
+		t.Fatalf("two-parent synthesis must not warn: %v %v", warnings, err)
+	}
+
+	// Three parents, no drops: warned.
+	h3, warnings, err := m.Synthesize("disc-1", issue, "bundle", []string{posA, posB, posC}, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("three-parent no-drops synthesis must warn: %v", warnings)
+	}
+	_ = h3
+
+	// Three parents with drops: stored, no warning.
+	h, warnings, err := m.Synthesize("disc-1", issue, "trimmed", []string{posA, posB, posC}, "", []string{"drops A's locks", "drops C's cache"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("recorded drops must silence the warning: %v", warnings)
+	}
+	g, _ := s.Graph("disc-1", store.Now())
+	if got := g.Nodes[h].Drops; len(got) != 2 {
+		t.Fatalf("drops not stored on the node: %+v", got)
+	}
+}
+
+// --answers requires a synthesis target and a real parent objection; a valid
+// answer records an addresses link.
+func TestAnswersLegalityAndLink(t *testing.T) {
+	s, m, issue, posA, posB := fixture(t)
+	bob := New(s, "bob", "")
+	obj, err := bob.Object("disc-1", posA, "mutex serializes readers", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, _, err := m.Synthesize("disc-1", issue, "hybrid", []string{posA, posB}, "", []string{"drops B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// --answers on a non-synthesis target is illegal.
+	wantIllegal(t, errOf(m.Object("disc-1", posA, "x", "", obj)), "--answers on a plain position")
+	// --answers naming a non-objection is illegal.
+	wantIllegal(t, errOf(m.Support("disc-1", h, "y", "", posB)), "--answers naming a non-objection")
+
+	// A valid answer records the addresses link.
+	ans, err := m.Support("disc-1", h, "the hybrid escapes it", "", obj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, _ := s.Graph("disc-1", store.Now())
+	found := false
+	for _, l := range g.Links {
+		if l.Src == ans && l.Dst == obj && string(l.Rel) == "addresses" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("valid --answers must record an addresses link")
 	}
 }
 

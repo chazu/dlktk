@@ -55,12 +55,17 @@ func TestUntestedSurfaced(t *testing.T) {
 		t.Fatalf("agenda untested wrong: %+v", v.Untested)
 	}
 
-	// A battle-tested (reinstated) winner is not untested.
+	// A winner whose only attack was its rival's edge is still untested:
+	// rival attacks are not examination (arc two item 1). settledGraph's A
+	// won because C defeated B; nothing ever engaged A itself.
 	g2, fw2, labels2 := settledGraph()
 	st2 := Status(g2, fw2, labels2, "I", nil)
 	for _, p := range st2.Positions {
-		if p.Untested {
-			t.Fatalf("attacked position must not be untested: %+v", p)
+		if p.ID == "A" && !p.Untested {
+			t.Fatalf("rival-mediated winner must be untested: %+v", p)
+		}
+		if p.ID == "B" && p.Untested {
+			t.Fatalf("defeated position must not be flagged untested: %+v", p)
 		}
 	}
 }

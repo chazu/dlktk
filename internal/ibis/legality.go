@@ -196,6 +196,39 @@ func (g *Graph) CanAttach(target string, rel Rel) error {
 	return nil
 }
 
+// CanAnswer validates --answers on object/support: the primary target must be
+// a position with synthesizes lineage, and the answered node must be an
+// objection against one of the target's transitive synthesis parents. The
+// resulting addresses link discharges an inherited question — either by
+// re-aiming it (object) or dismissing it (support) — so it must point at a
+// real inherited question, not an arbitrary node.
+func (g *Graph) CanAnswer(target, answers string) error {
+	tn, ok := g.Nodes[target]
+	if !ok {
+		return notFound(target, "--answers target %q not found", target)
+	}
+	if tn.Kind != Position {
+		return illegal(target, "--answers applies to a synthesis position, got %s", tn.Kind)
+	}
+	ancestors := g.SynthesisAncestors(target)
+	if len(ancestors) == 0 {
+		return illegal(target, "--answers applies to a synthesis; %s has no synthesizes lineage", target)
+	}
+	if _, ok := g.Nodes[answers]; !ok {
+		return notFound(answers, "--answers objection %q not found", answers)
+	}
+	inLineage := map[string]bool{}
+	for _, a := range ancestors {
+		inLineage[a] = true
+	}
+	for _, l := range g.Links {
+		if l.Rel == ObjectsTo && l.Src == answers && inLineage[l.Dst] {
+			return nil
+		}
+	}
+	return illegal(answers, "--answers %s is not an objection against a synthesis parent of %s", answers, target)
+}
+
 // CanPrefer validates a prefer: both endpoints must be AF nodes and the new edge
 // must not create a preference cycle.
 func (g *Graph) CanPrefer(winner, loser string) error {
