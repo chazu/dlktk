@@ -3,6 +3,7 @@ module github.com/chazu/dlktk
 go 1.25.8
 
 require (
+	cuelang.org/go v0.16.0
 	github.com/chazu/pudl v0.1.3-0.20260612132702-55d241f769e2
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/oklog/ulid/v2 v2.1.1
@@ -12,7 +13,6 @@ require (
 )
 
 require (
-	cuelang.org/go v0.16.0 // indirect
 	github.com/cockroachdb/apd/v3 v3.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

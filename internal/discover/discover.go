@@ -10,7 +10,12 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.17.0 is the arc-two repairs
+// Version of the dlktk contract. 0.17.1 completes the CUE schema published by
+// `dlktk schema` (CUESchema): #Decision gains the optional kind and
+// superseded_kind fields that map decisions (item 7) already write, so pudl's
+// closed bootstrap defs no longer reject a valid value-map decision fact. No
+// behavior change; the args shape was always written, only its schema lagged.
+// 0.17.0 is the arc-two repairs
 // (wicked-problems-2.md item 10): roster reports one row per distinct
 // (author, role) binding rather than one per move, show renders reframe lineage
 // from both sides (reframed_to on the dead framing, reframed_from on the new
@@ -78,7 +83,7 @@ import (
 // drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
 // supersede move (bare re-decide rejected, design §16 Q4) and
 // decided.supersedes.
-const Version = "0.17.0"
+const Version = "0.17.1"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -324,14 +329,16 @@ func CUESchema() string {
 }
 
 #Decision: {
-	disc:        string
-	issue:       string
-	position:    string
-	basis:       string
-	decider:     string
-	override:    bool
-	supersedes?: string // prior decided position, when made via supersede
-	review_by?:  int    // unix seconds; re-examination horizon check enforces
+	disc:             string
+	issue:            string
+	position:         string
+	basis:            string
+	decider:          string
+	override:         bool
+	supersedes?:      string // prior decided position, when made via supersede
+	review_by?:       int    // unix seconds; re-examination horizon check enforces
+	kind?:            "map"  // a value-map decision: the object is the issue's audience map, not a single position (empty/absent = conventional position decision)
+	superseded_kind?: "map"  // kind of the decision this one overturned, so a map->position or position->map conversion is legible on the record
 }
 
 #Roster: {
@@ -356,11 +363,11 @@ func CUESchema() string {
 }
 
 #Audience: {
-	disc:    string
-	name:    string
+	disc: string
+	name: string
 	ranking: [...string] // values, most important first (strict order)
-	basis?:  string      // recorded when a supersession retires a prior ranking
-	author:  string
+	basis?:              string // recorded when a supersession retires a prior ranking
+	author:              string
 }
 
 // relation -> schema binding
