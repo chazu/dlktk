@@ -5,6 +5,7 @@
 # exercise is its exported .ndjson, not the store)
 /.dlktk/
 examples/*/.dlktk/
+examples/*/.backups/
 *.db
 *.db-wal
 *.db-shm
