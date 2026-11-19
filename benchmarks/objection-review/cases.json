@@ -1,0 +1,346 @@
+[
+  {
+    "id": "ownership-1",
+    "family": "ownership",
+    "split": "development",
+    "source_nodes": {
+      "parent": "fofib-mosuv",
+      "objection": "fofos-narig",
+      "hybrid": "fogan-bukul",
+      "reply": "fogil-tibim"
+    },
+    "origin": "recorded",
+    "state": {
+      "parent": "Single theory-owner per module — one person accountable for its design integrity",
+      "objection": "single owner = bus factor 1; the owner leaves and the theory evaporates",
+      "hybrid": "Paired theory-holdership: two current holders per load-bearing module, rotating one seat at a time through hand-implemented handoffs",
+      "reply": "two holders is bus factor 2, and one-seat rotation refreshes it before it decays"
+    },
+    "provisional_label": "addresses"
+  },
+  {
+    "id": "practice-1",
+    "family": "practice",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizim-golaf",
+      "objection": "foduj-nozat"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Hand-flown legs: schedule regular features built entirely by hand to arrest skill decay",
+      "objection": "hand-flown legs are the first ritual cut under deadline pressure; who protects the calendar, and what ships later because of it? unsustainable as a standing practice",
+      "hybrid": "Combine hand-built features with an incident practice rotation.",
+      "reply": "The lead reserves a staffed half-day per sprint and removes one planned feature when an incident consumes that slot."
+    },
+    "provisional_label": "addresses"
+  },
+  {
+    "id": "volume-2",
+    "family": "volume",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizol-sifib",
+      "objection": "fobus-nanuv"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Churn-scoped deep review: aim human comprehension effort at high-churn, high-criticality modules only",
+      "objection": "targeted deep review still cannot keep pace with the raw volume agents generate",
+      "hybrid": "Combine targeted deep review with an automated change classifier.",
+      "reply": "A fixed weekly limit caps deep reviews at staffed capacity. Excess changes wait upstream and cannot expand the review queue."
+    },
+    "provisional_label": "addresses"
+  },
+  {
+    "id": "practice-4",
+    "family": "practice",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizim-golaf",
+      "objection": "foduj-nozat"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Hand-flown legs: schedule regular features built entirely by hand to arrest skill decay",
+      "objection": "hand-flown legs are the first ritual cut under deadline pressure; who protects the calendar, and what ships later because of it? unsustainable as a standing practice",
+      "hybrid": "Combine hand-built features with an incident practice rotation.",
+      "reply": "Participation counts on a leaderboard. Managers can still reclaim every session to meet delivery dates."
+    },
+    "provisional_label": "persists"
+  },
+  {
+    "id": "ownership-2",
+    "family": "ownership",
+    "split": "development",
+    "source_nodes": {
+      "parent": "fofit-potil",
+      "objection": "fofur-mutov",
+      "hybrid": "fogan-bukul",
+      "reply": "fogoj-lugup"
+    },
+    "origin": "recorded",
+    "state": {
+      "parent": "Team-wide shared theory — no single owner, everyone reads everything",
+      "objection": "read-everything does not scale; diffuse ownership means no one is accountable and the theory diffuses to nobody",
+      "hybrid": "Paired theory-holdership: two current holders per load-bearing module, rotating one seat at a time through hand-implemented handoffs",
+      "reply": "only load-bearing modules get a pair — a minority — so it scales where it matters"
+    },
+    "provisional_label": "persists"
+  },
+  {
+    "id": "ownership-4",
+    "family": "ownership",
+    "split": "development",
+    "source_nodes": {
+      "parent": "fofib-mosuv",
+      "objection": "fofos-narig"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Single theory-owner per module — one person accountable for its design integrity",
+      "objection": "single owner = bus factor 1; the owner leaves and the theory evaporates",
+      "hybrid": "Each module keeps its single holder and appoints a deputy.",
+      "reply": "The deputy has completed orientation."
+    },
+    "provisional_label": "unclear"
+  },
+  {
+    "id": "contract-3",
+    "family": "contract",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizap-rotal",
+      "objection": "fobod-musim"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Human-authored architecture contracts: humans own the interfaces and module boundaries; agents fill implementations",
+      "objection": "contracts rot too — who keeps them current as agents churn the implementations beneath them?",
+      "hybrid": "Combine human-authored contracts with automated boundary checks.",
+      "reply": "The team is piloting a contract service. Its validation and ownership rules are unspecified."
+    },
+    "provisional_label": "unclear"
+  },
+  {
+    "id": "volume-3",
+    "family": "volume",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizol-sifib",
+      "objection": "fobus-nanuv"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Churn-scoped deep review: aim human comprehension effort at high-churn, high-criticality modules only",
+      "objection": "targeted deep review still cannot keep pace with the raw volume agents generate",
+      "hybrid": "Combine targeted deep review with an automated change classifier.",
+      "reply": "The classifier selects a subset, but we have no selection rate or available reviewer hours."
+    },
+    "provisional_label": "unclear"
+  },
+  {
+    "id": "contract-4",
+    "family": "contract",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizap-rotal",
+      "objection": "fobod-musim"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Human-authored architecture contracts: humans own the interfaces and module boundaries; agents fill implementations",
+      "objection": "contracts rot too — who keeps them current as agents churn the implementations beneath them?",
+      "hybrid": "Combine human-authored contracts with automated boundary checks.",
+      "reply": "A named owner reconciles every changed interface with its contract as a required merge check."
+    },
+    "provisional_label": "addresses"
+  },
+  {
+    "id": "gate-3",
+    "family": "gate",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fivup-kupur",
+      "objection": "fobak-nohoj"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Comprehension gate: a load-bearing module cannot merge until a human can explain it unaided",
+      "objection": "gates throttle throughput to human reading speed — the velocity gain evaporates",
+      "hybrid": "Combine the comprehension gate with churn-based prioritization.",
+      "reply": "The gate uses a new review budget. The proposal gives no volume or service-time figures."
+    },
+    "provisional_label": "unclear"
+  },
+  {
+    "id": "gate-2",
+    "family": "gate",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fivup-kupur",
+      "objection": "fobak-nohoj"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Comprehension gate: a load-bearing module cannot merge until a human can explain it unaided",
+      "objection": "gates throttle throughput to human reading speed — the velocity gain evaporates",
+      "hybrid": "Combine the comprehension gate with churn-based prioritization.",
+      "reply": "On critical modules, run the human explanation after merge. It opens follow-up work and never delays a merge."
+    },
+    "provisional_label": "addresses"
+  },
+  {
+    "id": "contract-1",
+    "family": "contract",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizap-rotal",
+      "objection": "fobod-musim"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Human-authored architecture contracts: humans own the interfaces and module boundaries; agents fill implementations",
+      "objection": "contracts rot too — who keeps them current as agents churn the implementations beneath them?",
+      "hybrid": "Combine human-authored contracts with automated boundary checks.",
+      "reply": "CI blocks changes that break a boundary test. The module owner updates the test and contract together before accepting a new boundary."
+    },
+    "provisional_label": "addresses"
+  },
+  {
+    "id": "volume-1",
+    "family": "volume",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizol-sifib",
+      "objection": "fobus-nanuv"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Churn-scoped deep review: aim human comprehension effort at high-churn, high-criticality modules only",
+      "objection": "targeted deep review still cannot keep pace with the raw volume agents generate",
+      "hybrid": "Combine targeted deep review with an automated change classifier.",
+      "reply": "The classifier sorts the same backlog. Reviewers must still read every selected diff in full and have the same time available."
+    },
+    "provisional_label": "persists"
+  },
+  {
+    "id": "gate-1",
+    "family": "gate",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fivup-kupur",
+      "objection": "fobak-nohoj"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Comprehension gate: a load-bearing module cannot merge until a human can explain it unaided",
+      "objection": "gates throttle throughput to human reading speed — the velocity gain evaporates",
+      "hybrid": "Combine the comprehension gate with churn-based prioritization.",
+      "reply": "A human must still read every changed critical module before merging. Churn determines queue order only."
+    },
+    "provisional_label": "persists"
+  },
+  {
+    "id": "practice-3",
+    "family": "practice",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizim-golaf",
+      "objection": "foduj-nozat"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Hand-flown legs: schedule regular features built entirely by hand to arrest skill decay",
+      "objection": "hand-flown legs are the first ritual cut under deadline pressure; who protects the calendar, and what ships later because of it? unsustainable as a standing practice",
+      "hybrid": "Combine hand-built features with an incident practice rotation.",
+      "reply": "The group adopted a new calendar policy. Its owner and priority rules are unknown."
+    },
+    "provisional_label": "unclear"
+  },
+  {
+    "id": "gate-4",
+    "family": "gate",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fivup-kupur",
+      "objection": "fobak-nohoj"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Comprehension gate: a load-bearing module cannot merge until a human can explain it unaided",
+      "objection": "gates throttle throughput to human reading speed — the velocity gain evaporates",
+      "hybrid": "Combine the comprehension gate with churn-based prioritization.",
+      "reply": "The reviewer reads the same changes before merge. The dashboard now shows their wait times."
+    },
+    "provisional_label": "persists"
+  },
+  {
+    "id": "ownership-3",
+    "family": "ownership",
+    "split": "development",
+    "source_nodes": {
+      "parent": "fofib-mosuv",
+      "objection": "fofos-narig"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Single theory-owner per module — one person accountable for its design integrity",
+      "objection": "single owner = bus factor 1; the owner leaves and the theory evaporates",
+      "hybrid": "Each module keeps its single holder. A second reviewer checks formatting only.",
+      "reply": "The reviewer signs every change but never learns the design."
+    },
+    "provisional_label": "persists"
+  },
+  {
+    "id": "practice-2",
+    "family": "practice",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizim-golaf",
+      "objection": "foduj-nozat"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Hand-flown legs: schedule regular features built entirely by hand to arrest skill decay",
+      "objection": "hand-flown legs are the first ritual cut under deadline pressure; who protects the calendar, and what ships later because of it? unsustainable as a standing practice",
+      "hybrid": "Combine hand-built features with an incident practice rotation.",
+      "reply": "Developers do the exercises after finishing all committed work. Deadlines keep priority."
+    },
+    "provisional_label": "persists"
+  },
+  {
+    "id": "contract-2",
+    "family": "contract",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizap-rotal",
+      "objection": "fobod-musim"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Human-authored architecture contracts: humans own the interfaces and module boundaries; agents fill implementations",
+      "objection": "contracts rot too — who keeps them current as agents churn the implementations beneath them?",
+      "hybrid": "Combine human-authored contracts with automated boundary checks.",
+      "reply": "We publish the contract in the developer portal. Updating it is still optional and nobody checks for drift."
+    },
+    "provisional_label": "persists"
+  },
+  {
+    "id": "volume-4",
+    "family": "volume",
+    "split": "held-out",
+    "source_nodes": {
+      "parent": "fizol-sifib",
+      "objection": "fobus-nanuv"
+    },
+    "origin": "constructed",
+    "state": {
+      "parent": "Churn-scoped deep review: aim human comprehension effort at high-churn, high-criticality modules only",
+      "objection": "targeted deep review still cannot keep pace with the raw volume agents generate",
+      "hybrid": "Combine targeted deep review with an automated change classifier.",
+      "reply": "Publish the queue length in chat. Intake and reviewer hours stay the same."
+    },
+    "provisional_label": "persists"
+  }
+]
