@@ -232,3 +232,38 @@ func TestExportImportRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestMapDecisionImport(t *testing.T) {
+	src := open(t)
+	want := ibis.Decision{Disc: "d", Issue: "i", Kind: ibis.MapDecision, ReviewBy: 1234, Basis: "value conflict", Decider: "ann"}
+	if err := src.AddDecision(want); err != nil {
+		t.Fatal(err)
+	}
+	for name, export := range map[string]func(string) ([]ExportRecord, error){"snapshot": src.Export, "history": src.ExportHistory} {
+		t.Run(name, func(t *testing.T) {
+			dst := open(t)
+			rows, err := export("d")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for round := 0; round < 2; round++ {
+				if _, err := dst.ImportAll(rows); err != nil {
+					t.Fatal(err)
+				}
+				got, err := dst.Decisions("d", Now())
+				if err != nil || len(got) != 1 || got[0] != want {
+					t.Fatalf("decisions %v, error %v", got, err)
+				}
+			}
+		})
+	}
+	dst := open(t)
+	invalid := want
+	invalid.Kind = ""
+	if _, err := dst.ImportAll([]ExportRecord{rec(t, relDecision, want), rec(t, relDecision, invalid)}); err == nil {
+		t.Fatal("accepted a conventional decision without a winner")
+	}
+	if got, err := dst.Decisions("d", Now()); err != nil || len(got) != 0 {
+		t.Fatalf("partial import: %v, %v", got, err)
+	}
+}

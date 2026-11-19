@@ -738,7 +738,16 @@ func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Pr
 		if err := parse(&v); err != nil {
 			return err
 		}
-		return firstErr(require("disc", v.Disc), require("issue", v.Issue), require("position", v.Position))
+		if err := firstErr(require("disc", v.Disc), require("issue", v.Issue)); err != nil {
+			return err
+		}
+		if v.Kind == ibis.MapDecision {
+			if v.Position != "" || v.ReviewBy <= 0 {
+				return bad("a map decision requires an empty position and a review horizon")
+			}
+			return nil
+		}
+		return require("position", v.Position)
 	case relRoster:
 		var v ibis.Roster
 		if err := parse(&v); err != nil {
