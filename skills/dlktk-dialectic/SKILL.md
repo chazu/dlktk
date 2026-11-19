@@ -169,6 +169,8 @@ between *partial* answers tends to end in a synthesis — if you are synthesizin
 because complementary answers were seated as rivals, the issue wanted
 `--card open`; false rivalry manufactures a bundle at close time.
 
+Read every standing adoption and its basis with `show <issue>`. CLI JSON and MCP expose the list in `decisions`.
+
 *Example:* "which practices raise comprehension?" (pairing, spaced retrieval,
 code review — all adoptable) → `raise … --card open`, propose all three,
 stress-test each, `decide` each in turn: three standing decisions, no artificial
@@ -180,6 +182,12 @@ contest.
   `object`/`support` the existing node instead of restating it. Duplicate
   arguments don't change labels; they just bloat the graph. This is *the*
   predictable multi-agent failure mode — avoid it.
+  For a paraphrase on contract 0.20.0 or later, use
+  `dlktk search "<claim>" --semantic`. This sends the query and up to eight
+  candidate IDs and texts to Jev on OpenRouter. Set `OPENROUTER_API_KEY`
+  for the calling process. Inspect the original text of each suggested node.
+  Use `--all` for multiple discussions. MCP accepts `semantic: true` and
+  searches all discussions when the caller omits `discussion`.
 - **To change the verdict, `object` — never `support`.** `supports` is recorded
   rationale the evaluator ignores. Defend a position by defeating its attacker
   (object to the objection); reinstatement does the rest.
@@ -196,6 +204,8 @@ contest.
      hybrid must not enter the arena cleaner than its content. If the rivals
      only compete because of a `select_one` framing and actually compose, the
      deadlock is a cardinality mistake — the issue wanted `--card open`.
+     An answer to an inherited objection applies to the hybrid named in the move.
+     If two hybrids inherit the same objection, inspect each with `show` or `why`.
   2. `reframe <issue> "<new framing>" --basis <label>` — when the deadlock is
      a false dichotomy. Positions don't carry over; the dead framing leaves
      the agenda; lineage is recorded.

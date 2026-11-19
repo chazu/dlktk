@@ -10,7 +10,8 @@ import (
 	"strings"
 )
 
-// Version of the dlktk contract. 0.19.0 records decision-scoped warning acknowledgments.
+// Contract 0.20.0 adds opt-in Jev search to CLI and MCP.
+// 0.19.0 records decision-scoped warning acknowledgments.
 // 0.18.0 exposes every open adoption in show. 0.17.1 completes the CUE schema published by
 // `dlktk schema` (CUESchema): #Decision gains the optional kind and
 // superseded_kind fields that map decisions (item 7) already write, so pudl's
@@ -163,8 +164,8 @@ func Current() Schema {
 			{"prefer", []string{"winner", "loser", "--basis label"}, "AF nodes; no preference cycle; result warns (self-elevated synthesis) when the winner subsumes the loser without answering its objections", true},
 			{"promote", []string{"node", "value"}, "AF node owned by the author; one value per node (to change, concede and restate)", true},
 			{"audience", []string{"name", "value...", "[--supersede --basis label]"}, "at least two distinct values, most important first; re-declaring a name requires --supersede with a basis", true},
-			{"decide", []string{"issue", "position", "[--basis label]", "[--review-by T]", "[--ack kind[:node]]...", "[--map]"}, "position responds_to issue; select_one: issue not already decided (overturn via supersede); open: one standing decision per position — the winners compose — so a repeat decide is rejected only on the same position; --map (no position) closes the issue as its audience-conditional map — legal only with >=2 declared audiences and >=1 position whose verdict differs across them, --review-by then mandatory; review-by must be in the future", true},
-			{"supersede", []string{"issue", "position", "--basis label", "[--review-by T]", "[--ack kind[:node]]...", "[--map]"}, "basis required; select_one: replaces the issue's single decision; open: revises the standing decision on <position> (siblings stand); --map (no position) converts the issue to a value-map (same map preconditions, --review-by mandatory); new decision records the superseded decision's kind", true},
+			{"decide", []string{"issue", "position", "[--basis label]", "[--review-by T]", "[--ack kind[:node]]...", "[--map]"}, "position responds_to issue; select_one: issue not already decided (overturn via supersede); open: one standing decision per position — the winners compose — so a repeat decide is rejected only on the same position; --map (no position) closes the issue as its audience-conditional map — legal only with >=2 declared audiences and >=1 position whose verdict differs across them, --review-by then mandatory; review-by must be in the future; each --ack must name a warning present on this decision and requires a nonempty basis", true},
+			{"supersede", []string{"issue", "position", "--basis label", "[--review-by T]", "[--ack kind[:node]]...", "[--map]"}, "basis required; select_one: replaces the issue's single decision; open: revises the standing decision on <position> (siblings stand); --map (no position) converts the issue to a value-map (same map preconditions, --review-by mandatory); new decision records the superseded decision's kind; --ack requires a rationale in basis and applies only to warnings on the new decision", true},
 			{"concede", []string{"node"}, "author (identity, not persona) owns the node", true},
 			{"retract", []string{"node"}, "author (identity, not persona) owns the node", true},
 			{"roster", []string{"[author]", "[role]"}, "no args lists bindings; author+role pre-declares one (moves auto-record otherwise)", true},

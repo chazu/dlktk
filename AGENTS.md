@@ -122,6 +122,8 @@ run a divergence phase before any convergent move:
    content. If the rivals were only *forced* to compete by a `select_one`
    framing — the answers actually compose — the deadlock is a cardinality
    mistake, not a real dichotomy (see **Cardinality** below).
+   An answer to an inherited objection applies to the hybrid named in the move.
+   If two hybrids inherit the same objection, inspect each with `show` or `why`.
 2. `reframe` — if the deadlock signals a false dichotomy, replace the framing
    (`--basis` required; positions do not carry over; the old framing leaves
    the agenda and the lineage is recorded).
@@ -145,6 +147,7 @@ Pick an issue's cardinality when you `raise` it — it is fixed at creation:
   agenda's `ready` section lists each undecided-but-justified position, and
   `supersede <issue> <A>` revises just A's decision while B's stands. Each
   per-position decision is drift-checked independently.
+  Read every standing adoption and its basis with `show <issue>`. CLI JSON and MCP expose the list in `decisions`.
 - **Use `select_one` only when the answers genuinely exclude one another** —
   pick this lock *or* that one, ship *or* don't. A second `decide` is rejected;
   overturning goes through `supersede`.
@@ -188,6 +191,12 @@ on its own.
 - **Search before you argue.** `search "<phrase>"` — if the claim already
   exists as a node, don't restate it; `object`/`support` the existing graph
   instead. Duplicate arguments don't change labels, they just bloat the graph.
+  For a paraphrase on contract 0.20.0 or later, use
+  `dlktk search "<claim>" --semantic`. This sends the query and up to eight
+  candidate IDs and texts to Jev on OpenRouter. Set `OPENROUTER_API_KEY`
+  for the calling process. Inspect the original text of each suggested node.
+  Use `--all` for multiple discussions. MCP accepts `semantic: true` and
+  searches all discussions when the caller omits `discussion`.
 - **An argument that should change the verdict must `object`,** not `support`.
   `supports` is recorded rationale only; the evaluator ignores it. To defend a
   position, defeat its attacker (object to the objection) — reinstatement does

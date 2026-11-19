@@ -45,7 +45,34 @@ This Bash example uses jq and a temporary store. It checks that RWLock becomes t
 
 Agent commands: `discover` (CUE/JSON capability schema), `agenda` (the worklist: UNDEC set, ready-to-decide, untested winners, unexamined assumptions), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it), `explain <issue>` (full derivation: how attacks/defeats were built and the round-by-round grounded fixpoint that produced the labelling). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store, `5` check-failed).
 
-For a paraphrase, try `dlktk search "A writer can wait forever when readers keep arriving" --semantic`. This opt-in read sends the query and up to eight candidate IDs and texts to Jev on OpenRouter. Set `OPENROUTER_API_KEY` in the environment of the CLI or MCP server. The MCP `search` tool accepts `semantic: true`. Results include up to three original nodes and their discussion IDs. Review the suggested text before treating claims as duplicates. Plain `search` works offline.
+### Find an existing claim
+
+Plain `dlktk search "writer starvation"` matches a case-insensitive substring in the current discussion. To look for the same claim in different words, use contract 0.20.0 or later:
+
+```sh
+dlktk search "A writer can wait forever when readers keep arriving" --semantic
+```
+
+Set `OPENROUTER_API_KEY` for the CLI or MCP server before using semantic search. It sends the query and up to eight candidate IDs and texts to Jev on OpenRouter. It returns up to three original nodes, each with its discussion ID and text. A missing candidate or a model choice of “no match” can yield an empty result. Inspect the returned text before treating claims as duplicates. Plain search works offline.
+
+Add `--all` to search across discussions. In MCP, call `search` with `query`, `semantic: true`, and an optional `discussion` ID. Omitting `discussion` searches all discussions. If the provider is unavailable, retry without the semantic option for local substring search.
+
+### Read and restore decisions
+
+On an open issue, `dlktk show <issue>` lists every adopted position and its basis. CLI JSON and MCP return these adoptions in `decisions`. Superseding one adoption updates only that position. For a single winner or an audience map, `show` returns `decided`. A map has `kind: "map"` and represents the outcome under each audience's ranking.
+
+When two hybrids inherit the same objection, answer it on each hybrid where it applies. An answer on one hybrid closes only that hybrid's question. If the answer is conceded, the question reopens there. Inspect `inherited_questions` with `show` or `why`.
+
+To inspect the saved audience map in a fresh store, run these commands from the checkout:
+
+```sh
+store=$(mktemp -d)
+dlktk import examples/make-prorgamming-fun-again/dialectic.ndjson --store "$store"
+dlktk show fojas-pipit -d fivij-zatad --store "$store" --format json
+dlktk audiences -d fivij-zatad --store "$store"
+```
+
+Both snapshot and history imports preserve the map decision, basis, and review horizon. Repeated imports of the same export are idempotent.
 
 Wicked-problem support (divergence, exploration, plural values — see [`wicked-problems.md`](wicked-problems.md) for the rationale):
 
@@ -71,17 +98,23 @@ Postmortem: `replay <issue> --as-of T [--diff]` (labelling as it stood at T, and
 
 Claude skill: [`skills/dlktk-dialectic/SKILL.md`](skills/dlktk-dialectic/SKILL.md) is a drop-in Claude Code skill teaching an agent how to conduct a dialectic — the loop, move discipline, and the author/role/roster mechanics for multi-persona debates. Copy it into `.claude/skills/` (or a plugin) to install.
 
-MCP: `dlktk mcp` serves the same verb set over the Model Context Protocol (stdio) — one tool per move/read, returning the identical JSON envelopes — so any MCP-capable agent harness can drive a dialectic without shelling out. Moves are serialized in-process, which also closes the legality-check/write race concurrent CLI invocations have. Example client config:
+MCP: `dlktk mcp` serves the same verb set over the Model Context Protocol (stdio) — one tool per move/read, returning the identical JSON envelopes — so any MCP-capable agent harness can drive a dialectic without shelling out. The CLI and MCP server use store transactions to check move legality and write facts atomically. Example client config:
 
 ```json
 {"mcpServers": {"dlktk": {"command": "dlktk", "args": ["mcp", "--store", "/path/to/repo/.pudl"]}}}
 ```
 
-CI: `check [--all] [--strict]` verifies that recorded decisions still stand — exit 5 when a decided position is no longer justified (the dialectic moved out from under it), when stored preferences are cyclic, or when store invariants are violated; `--strict` also fails on the warnings: lingering stalemates, never-attacked decisions (`untested_decision`), expired review horizons (`review_due`), and decisions resting on defeated assumptions (`defeated_assumption`). Run it in CI so decisions stay living constraints — this repo's own workflow drift-checks the `examples/` dialectics on every PR.
+## Verification and benchmarks
+
+CI restores each tracked example snapshot into a separate temporary store and checks the expected decisions and findings. A fixed review date keeps historical warning expectations reproducible. CI also runs the reference deliberation and the Bash quickstart above.
+
+To review benchmark replies locally, run `python3 benchmarks/objection-review/review.py` and open the URL it prints. The page saves labels and optional reasons and resumes at the first unanswered case. Editing a completed case updates the saved human judgment. The benchmark guide includes the command for rescoring saved predictions. [Objection review guide and results](benchmarks/objection-review/README.md)
+
+The duplicate-search trial qualified Jev for opt-in retrieval. The objection reviewer and automatic framing prompt were deferred after evaluation. The search and framing report includes the test cases, limits, and reproduction commands. [Search and framing results](benchmarks/search-framing/README.md)
 
 ## Build
 
-dlktk pins a tagged `github.com/chazu/pudl` release in `go.mod`, so a plain clone builds reproducibly with no sibling checkout:
+dlktk pins a `github.com/chazu/pudl` revision in `go.mod`, so a plain clone builds reproducibly with no sibling checkout:
 
 ```
 git clone https://github.com/chazu/dlktk
@@ -101,7 +134,7 @@ use (
 	../pudl
 )
 EOF
-go build ./...        # uses ../pudl; GOWORK=off builds the pinned release
+go build ./...        # uses ../pudl; GOWORK=off builds the pinned revision
 ```
 
 Bump the pin deliberately with `go get github.com/chazu/pudl@latest` (design §16 Q1).

@@ -48,4 +48,4 @@ The human review changed six provisional labels. On practice-1, both models acce
 
 ## Review in a browser
 
-Run `python3 review.py` from this directory and open the loopback URL it prints. The page resumes at the first unanswered case. Choose a judgment, add an optional reason, and select **Save and continue**. The server writes to `reviewed.json` and `review-notes.json`. Select a case in the sidebar to revise a saved judgment.
+Run `python3 review.py` from this directory. Open `http://127.0.0.1:8741/`, or use `--port` to select another local port. The page resumes at the first unanswered case. Choose a judgment, add an optional reason, and select **Save and continue**. The server writes to `reviewed.json` and `review-notes.json`. Select a case in the sidebar to revise a saved judgment. The page shows the proposal, objection, hybrid, and reply. Model predictions and provisional labels stay hidden. With all cases reviewed, rerun the scoring command above to evaluate the saved predictions against your edits.
