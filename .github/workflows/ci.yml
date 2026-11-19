@@ -31,3 +31,10 @@ jobs:
       - run: python3 .github/scripts/check_examples.py ./dlktk
       # The reference deliberation harness must run end to end (AGENTS.md).
       - run: DLKTK=$PWD/dlktk ./examples/deliberate.sh
+      - name: Run the README quickstart
+        env:
+          DLKTK: ${{ github.workspace }}/dlktk
+        run: |
+          awk '/^## Quickstart$/ {section=1; next} section && /^```bash$/ {code=1; next} code && /^```$/ {exit} code' README.md > "$RUNNER_TEMP/quickstart.sh"
+          test -s "$RUNNER_TEMP/quickstart.sh"
+          bash "$RUNNER_TEMP/quickstart.sh"

@@ -16,18 +16,30 @@ Three separable layers, each tiny on its own:
 
 Every verb is equally drivable by a human at a terminal and by an agent over JSON.
 
-## Example
+## Quickstart
 
-```
-dlktk new "lock choice"
-I=$(dlktk raise "which lock?" --format json | jq -r .id)
-dlktk propose $I "mutex"
-B=$(dlktk propose $I "RWLock" --format json | jq -r .id)
-C=$(dlktk object $B "writer starvation" --format json | jq -r .id)
-dlktk object $C "workload is read-heavy; starvation won't occur"   # reinstates RWLock
-dlktk status $I                 # mutex vs RWLock — tied, UNDEC
-dlktk prefer $B $A --basis throughput
-dlktk status $I                 # RWLock justified
+Run `command -v dlktk` to see which executable your shell selects. Run `dlktk discover --format json | jq -r .version` to see its contract version. From the checkout, compare it with `go run ./cmd/dlktk discover --format json | jq -r .version`. To use the checkout, run `make build` and set `DLKTK="$PWD/dlktk"` before starting the example.
+
+This Bash example uses jq and a temporary store. It checks that RWLock becomes the only justified position.
+
+```bash
+(
+  set -euo pipefail
+  binary=${DLKTK:-$(command -v dlktk)}
+  work=$(mktemp -d)
+  trap 'rm -rf "$work"' EXIT
+  cd "$work"
+  run() { "$binary" --store "$work/store" --format json "$@"; }
+  disc=$(run new "lock choice" | jq -er .id)
+  move() { run -d "$disc" "$@"; }
+  issue=$(move raise "which lock?" | jq -er .id)
+  mutex=$(move propose "$issue" "mutex" --author ann | jq -er .id)
+  rwlock=$(move propose "$issue" "RWLock" --author bob | jq -er .id)
+  objection=$(move object "$rwlock" "a writer can starve" --author ann | jq -er .id)
+  move object "$objection" "this lock queues a waiting writer ahead of new readers" --author bob
+  move prefer "$rwlock" "$mutex" --basis throughput
+  move status "$issue" | jq -e --arg id "$rwlock"     '[.[0].positions[] | select(.label == "IN") | .id] == [$id]'
+)
 ```
 
 Agent commands: `discover` (CUE/JSON capability schema), `agenda` (the worklist: UNDEC set, ready-to-decide, untested winners, unexamined assumptions), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it), `explain <issue>` (full derivation: how attacks/defeats were built and the round-by-round grounded fixpoint that produced the labelling). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store, `5` check-failed).
