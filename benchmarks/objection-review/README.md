@@ -47,3 +47,7 @@ Decider marked the participation leaderboard in practice-4 as an answer even tho
 Jev met the numerical criteria for a larger trial on the draft labels. Decider missed the false-reassurance and order-stability criteria. Jev reported a total cost of USD 0.000789 for 40 requests. Decider returned token counts without a monetary cost.
 
 Defer integration. All held-out replies are constructed, all cases share one discussion, and a human still needs to review the labels. Preserve these predictions for rescoring. To provide independent labels, examine the state fields before reading the predictions. Supply a JSON object mapping each case ID to a label with `score.py --labels reviewed.json decider.jsonl jev.jsonl`.
+
+## Review in a browser
+
+Run `python3 review.py` from this directory and open the loopback URL it prints. The page resumes at the first unanswered case. Choose a judgment, add an optional reason, and select **Save and continue**. The server writes to `reviewed.json` and `review-notes.json`. Select a case in the sidebar to revise a saved judgment.
