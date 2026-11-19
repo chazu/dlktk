@@ -37,9 +37,15 @@ func InheritedQuestions(g *ibis.Graph, labels map[string]af.Label, node string) 
 	if len(ancestors) == 0 {
 		return nil
 	}
+	onHybrid := map[string]bool{}
+	for _, l := range g.Links {
+		if l.Dst == node && (l.Rel == ibis.Supports || l.Rel == ibis.ObjectsTo) {
+			onHybrid[l.Src] = true
+		}
+	}
 	addressedBy := map[string][]string{} // objection id -> addressing nodes
 	for _, l := range g.Links {
-		if l.Rel == ibis.Addresses {
+		if l.Rel == ibis.Addresses && onHybrid[l.Src] {
 			if _, ok := g.Nodes[l.Src]; ok { // a conceded addresser no longer discharges
 				addressedBy[l.Dst] = append(addressedBy[l.Dst], l.Src)
 			}

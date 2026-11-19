@@ -207,3 +207,37 @@ func TestShowRendersDropsAndInheritedQuestions(t *testing.T) {
 		t.Fatalf("show text missing drops/inherited-questions sections:\n%s", txt)
 	}
 }
+
+func TestSiblingHybridsKeepSeparateAnswers(t *testing.T) {
+	for _, relation := range []ibis.Rel{ibis.Supports, ibis.ObjectsTo} {
+		t.Run(string(relation), func(t *testing.T) {
+			g, _, _ := chainGraph()
+			g.Nodes["sibling"] = ibis.Node{ID: "sibling", Kind: ibis.Position}
+			g.Nodes["reply"] = ibis.Node{ID: "reply", Kind: ibis.Argument, Author: "reviewer"}
+			g.Links = append(g.Links,
+				ibis.Link{Src: "sibling", Dst: "H1", Rel: ibis.Synthesizes},
+				ibis.Link{Src: "sibling", Dst: "C", Rel: ibis.Synthesizes},
+				ibis.Link{Src: "reply", Dst: "H2", Rel: relation},
+				ibis.Link{Src: "reply", Dst: "OBJ", Rel: ibis.Addresses},
+			)
+			fw, err := af.Build(g)
+			if err != nil {
+				t.Fatal(err)
+			}
+			labels := fw.Grounded()
+			for node, wantOpen := range map[string]bool{"H2": false, "sibling": true} {
+				q := Why(g, fw, labels, node).InheritedQuestions
+				if len(q) != 1 || q[0].Open != wantOpen {
+					t.Fatalf("%s: %+v", node, q)
+				}
+				if _, flagged := SelfElevation(g, labels, node, "A"); flagged != wantOpen {
+					t.Fatalf("%s: flagged %t", node, flagged)
+				}
+			}
+			delete(g.Nodes, "reply")
+			if q := InheritedQuestions(g, labels, "H2"); len(q) != 1 || !q[0].Open {
+				t.Fatalf("conceded answer: %+v", q)
+			}
+		})
+	}
+}
