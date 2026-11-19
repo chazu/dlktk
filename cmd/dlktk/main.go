@@ -29,6 +29,7 @@ import (
 	"github.com/chazu/dlktk/internal/mcpserv"
 	"github.com/chazu/dlktk/internal/proto"
 	"github.com/chazu/dlktk/internal/render"
+	"github.com/chazu/dlktk/internal/search"
 	"github.com/chazu/dlktk/internal/store"
 )
 
@@ -508,7 +509,7 @@ func cmdMoves() *cobra.Command {
 }
 
 func cmdSearch() *cobra.Command {
-	var all bool
+	var all, semantic bool
 	c := &cobra.Command{
 		Use:   "search <query>",
 		Short: "find nodes whose text matches (check for an existing argument before duplicating it)",
@@ -540,17 +541,9 @@ func cmdSearch() *cobra.Command {
 				}
 				discs = []string{disc}
 			}
-			v := render.SearchView{Query: args[0]}
-			for _, disc := range discs {
-				g, err := s.Graph(disc, w)
-				if err != nil {
-					return err
-				}
-				var labels map[string]af.Label
-				if fw, err := af.Build(g); err == nil { // unlabellable graphs still searchable
-					labels = fw.Grounded()
-				}
-				v.Hits = append(v.Hits, render.Search(disc, g, labels, args[0])...)
+			v, err := search.Read(cmd.Context(), s, w, discs, args[0], semantic)
+			if err != nil {
+				return err
 			}
 			if wantJSON() {
 				out, _ := render.JSON(v)
@@ -562,6 +555,7 @@ func cmdSearch() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&all, "all", false, "search every discussion in the store (else the current one)")
+	c.Flags().BoolVar(&semantic, "semantic", false, "find paraphrases using Jev on OpenRouter (sends query and up to eight candidate texts)")
 	return c
 }
 

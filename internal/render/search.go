@@ -22,8 +22,9 @@ type SearchHit struct {
 // discussion can check whether a claim has already been made before piling on
 // a duplicate — the predictable multi-agent failure mode.
 type SearchView struct {
-	Query string      `json:"query"`
-	Hits  []SearchHit `json:"hits"`
+	Semantic bool        `json:"semantic,omitempty"`
+	Query    string      `json:"query"`
+	Hits     []SearchHit `json:"hits"`
 }
 
 // Search matches query (case-insensitive substring) against node text in one

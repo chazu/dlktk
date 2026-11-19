@@ -45,6 +45,8 @@ This Bash example uses jq and a temporary store. It checks that RWLock becomes t
 
 Agent commands: `discover` (CUE/JSON capability schema), `agenda` (the worklist: UNDEC set, ready-to-decide, untested winners, unexamined assumptions), `moves <issue>` (legal next moves), `why <node>` (label explanation + how to flip it), `explain <issue>` (full derivation: how attacks/defeats were built and the round-by-round grounded fixpoint that produced the labelling). Structured JSON errors with stable exit codes (`2` illegal, `3` not-found, `4` store, `5` check-failed).
 
+For a paraphrase, try `dlktk search "A writer can wait forever when readers keep arriving" --semantic`. This opt-in read sends the query and up to eight candidate IDs and texts to Jev on OpenRouter. Set `OPENROUTER_API_KEY` in the environment of the CLI or MCP server. The MCP `search` tool accepts `semantic: true`. Results include up to three original nodes and their discussion IDs. Review the suggested text before treating claims as duplicates. Plain `search` works offline.
+
 Wicked-problem support (divergence, exploration, plural values — see [`wicked-problems.md`](wicked-problems.md) for the rationale):
 
 - **Epistemic honesty** — an IN position with no attackers is marked *untested* (IN by silence, not by surviving attack); `agenda` lists them, `moves` suggests stress-testing before `decide`, and `check --strict` flags never-attacked decisions.

@@ -27,6 +27,7 @@ import (
 	"github.com/chazu/dlktk/internal/id"
 	"github.com/chazu/dlktk/internal/proto"
 	"github.com/chazu/dlktk/internal/render"
+	"github.com/chazu/dlktk/internal/search"
 	"github.com/chazu/dlktk/internal/store"
 )
 
@@ -685,6 +686,7 @@ func (x *srv) show(ctx context.Context, req *mcp.CallToolRequest, a nodeArgs) (*
 }
 
 type searchArgs struct {
+	Semantic   bool   `json:"semantic,omitempty" jsonschema:"opt in to sending the query and up to eight candidate texts to Jev on OpenRouter"`
 	Query      string `json:"query" jsonschema:"case-insensitive substring to match against node text"`
 	Discussion string `json:"discussion,omitempty" jsonschema:"discussion id (all discussions if omitted)"`
 }
@@ -702,17 +704,9 @@ func (x *srv) search(ctx context.Context, req *mcp.CallToolRequest, a searchArgs
 		}
 		sort.Strings(discs)
 	}
-	v := render.SearchView{Query: a.Query}
-	for _, disc := range discs {
-		g, err := x.s.Graph(disc, store.Now())
-		if err != nil {
-			return bad(err)
-		}
-		var labels map[string]af.Label
-		if fw, err := af.Build(g); err == nil {
-			labels = fw.Grounded()
-		}
-		v.Hits = append(v.Hits, render.Search(disc, g, labels, a.Query)...)
+	v, err := search.Read(ctx, x.s, store.Now(), discs, a.Query, a.Semantic)
+	if err != nil {
+		return bad(err)
 	}
 	return ok(v)
 }
