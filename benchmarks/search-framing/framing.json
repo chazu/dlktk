@@ -1,0 +1,13 @@
+[
+ {"id":"practices","issue":"Which practices raise comprehension?","options":["Pair on changes","Use spaced retrieval"],"expect":["AB"],"source":"AGENTS.md worked example"},
+ {"id":"portfolio","issue":"Which agentic coding practices should we adopt?","options":["Require a human explanation for critical modules","Use incident-based retrieval drills","Have humans own interface contracts"],"expect":["AB","AC","BC"],"source":"saved portfolio fivol-mipin, four standing adoptions"},
+ {"id":"different-modules","issue":"What should reviewers do across the repository?","options":["Block unexplained changes to the payment module","Warn on unexplained changes to generated glue"],"expect":["AB"],"source":"constructed disjoint scopes"},
+ {"id":"same-merge","issue":"What happens to this merge when its gate fails?","options":["Block this merge","Allow this merge with a warning"],"expect":["exclusive"],"source":"fojas-pipit, explicit same event"},
+ {"id":"lock","issue":"Which one lock should guard this cache?","options":["A plain mutex","A reader-writer lock"],"expect":["exclusive"],"source":"AGENTS.md select_one lock example"},
+ {"id":"redecide","issue":"How should the CLI handle a bare second decision on a single-winner issue?","options":["Reject that call","Accept that call and invalidate its predecessor"],"expect":["exclusive"],"source":"saved choice hizom-pilil"},
+ {"id":"mixed","issue":"Which release practices can we adopt for this build?","options":["Ship this build today","Withhold this build today","Archive the build log"],"expect":["AC","BC"],"source":"constructed compatible pair amid rivals"},
+ {"id":"scope","issue":"Which review policy should we use?","options":["Block merges","Warn only"],"expect":["unclear"],"source":"scope unspecified; ask the maintainer"},
+ {"id":"funding","issue":"What can we staff next month with the remaining budget?","options":["Add a second reviewer to every module","Staff a dedicated incident practice rotation"],"expect":["unclear"],"source":"constructed missing budget and staffing costs"},
+ {"id":"term","issue":"Which ownership policies should apply?","options":["Assign a single owner","Require two maintainers"],"expect":["unclear"],"source":"constructed missing definitions of owner and maintainer"},
+ {"id":"policy-detail","issue":"What should every team use for its merge gate?","options":["Follow the new charter","Keep the current policy"],"expect":["unclear"],"source":"constructed missing content of both policies"}
+]

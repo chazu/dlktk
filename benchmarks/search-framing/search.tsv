@@ -1,0 +1,21 @@
+kind	query	expected
+paraphrase	A writer can wait forever when readers keep arriving.	jisop-bativ
+paraphrase	A dependency pin can leave us waiting for important pudl fixes.	rovab-zinin
+paraphrase	If the only person who knows a module leaves, its design knowledge leaves too.	fofos-narig
+paraphrase	The review gate caps throughput at the speed a human can read.	fobak-nohoj
+paraphrase	Code contracts can get stale as the underlying implementations change.	fobod-musim
+paraphrase	A cross-discussion live link lets a move in B change the verdict in A without a local move.	mamuj-tiras,ridij-potof
+paraphrase	Recording the reversal in the log still does not explain why the decision was changed.	hobim-datup,hobaj-vudaz
+paraphrase	If every dependency change needs a release and a version bump, local iteration slows down.	rotod-jufab
+paraphrase	Switching cardinality can change every verdict without adding a single argument.	zabin-digof,zabov-vafam
+paraphrase	Asking people quiz questions feels patronizing and they will disable it.	fodim-burak
+literal	writer starvation under sustained read load	jisop-bativ
+literal	single owner = bus factor 1	fofos-narig
+near-miss	A flood of writers can indefinitely starve waiting readers.	-
+near-miss	A pinned pudl version guarantees that fixes arrive automatically.	-
+near-miss	Each gate must reject changes after a fixed number of minutes.	-
+near-miss	A code contract can drift because two test runners disagree on time zones.	-
+near-miss	Changing a persona should transfer ownership of prior arguments.	-
+absent	A database replica on another continent must encrypt snapshots.	-
+absent	Cache eviction should prefer the largest pages.	-
+absent	The reviewer must have a current first-aid certificate.	-

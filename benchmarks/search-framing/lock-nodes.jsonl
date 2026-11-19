@@ -1,0 +1,7 @@
+{"id":"jitum-dumig","text":"RWLock with a writer-priority escape hatch"}
+{"id":"jitab-tudut","text":"cache is 99% reads; starvation cannot occur"}
+{"id":"jisop-bativ","text":"writer starvation under sustained read load"}
+{"id":"jirur-kokoz","text":"the cache stays read-heavy as traffic grows"}
+{"id":"jirin-zovoh","text":"RWLock — readers should not serialize"}
+{"id":"jirag-fibim","text":"plain mutex — simplest thing that works"}
+{"id":"jipof-husas","text":"which lock for the read cache?"}

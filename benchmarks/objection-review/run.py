@@ -32,7 +32,8 @@ def query(url, headers, payload):
             time.sleep(2 ** attempt)
     answer = result["answers"]["review"]
     scores = answer["probabilities"]
-    if answer["choice"] not in OPTIONS or set(scores) != set(OPTIONS):
+    options = payload["questions"]["review"]["criteria"]
+    if answer["choice"] not in options or set(scores) != set(options):
         raise ValueError("Unexpected options in response")
     if not all(math.isfinite(p) and 0 <= p <= 1 for p in scores.values()):
         raise ValueError("Invalid probabilities")
