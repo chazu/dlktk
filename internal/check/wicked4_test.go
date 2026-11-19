@@ -1,10 +1,11 @@
-package check
+package check_test
 
 import (
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/chazu/dlktk/internal/check"
 	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/proto"
 	"github.com/chazu/dlktk/internal/store"
@@ -66,17 +67,17 @@ func TestMapDecisionClosesAndNudgesGovernance(t *testing.T) {
 	if !v.OK {
 		t.Fatalf("a healthy map decision must not fail the check: %+v", v)
 	}
-	if findKind(v, Stalemate) != 0 {
+	if findKind(v, check.Stalemate) != 0 {
 		t.Fatalf("a mapped issue is closed — no stalemate finding: %+v", v)
 	}
-	if findKind(v, MapDrift) != 0 {
+	if findKind(v, check.MapDrift) != 0 {
 		t.Fatalf("no drift right after deciding: %+v", v)
 	}
-	if findKind(v, MappedPendingGovernance) != 1 {
+	if findKind(v, check.MappedPendingGovernance) != 1 {
 		t.Fatalf("want a mapped_pending_governance note: %+v", v)
 	}
 	for _, f := range v.Findings {
-		if f.Kind == MappedPendingGovernance && f.Severity != "note" {
+		if f.Kind == check.MappedPendingGovernance && f.Severity != "note" {
 			t.Fatalf("mapped_pending_governance must be a non-fatal note, got %q", f.Severity)
 		}
 	}
@@ -93,7 +94,7 @@ func TestMapGovernanceNoteClearsWhenRaised(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, MappedPendingGovernance) != 0 {
+	if findKind(v, check.MappedPendingGovernance) != 0 {
 		t.Fatalf("note must clear once a governance issue is raised from the mapped issue: %+v", v)
 	}
 }
@@ -113,7 +114,7 @@ func TestMapDriftFiresWhenMapChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, MapDrift) != 1 {
+	if findKind(v, check.MapDrift) != 1 {
 		t.Fatalf("want map_drift after the map changed: %+v", v)
 	}
 }

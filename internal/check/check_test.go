@@ -1,9 +1,10 @@
-package check
+package check_test
 
 import (
 	"testing"
 	"time"
 
+	"github.com/chazu/dlktk/internal/check"
 	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/proto"
 	"github.com/chazu/dlktk/internal/store"
@@ -22,16 +23,16 @@ func open(t *testing.T) (*store.Store, *proto.Mover) {
 	return s, proto.New(s, "x", "")
 }
 
-func run(t *testing.T, s *store.Store) View {
+func run(t *testing.T, s *store.Store) check.View {
 	t.Helper()
-	v, err := Run(s, []string{"d"}, store.Now(), time.Now().Unix())
+	v, err := check.Run(s, []string{"d"}, store.Now(), time.Now().Unix())
 	if err != nil {
 		t.Fatal(err)
 	}
 	return v
 }
 
-func only(t *testing.T, v View, kind, severity string) Finding {
+func only(t *testing.T, v check.View, kind, severity string) check.Finding {
 	t.Helper()
 	if len(v.Findings) != 1 {
 		t.Fatalf("want 1 finding, got %d: %+v", len(v.Findings), v.Findings)
@@ -77,7 +78,7 @@ func TestDecisionDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	f := only(t, v, DecisionDrift, "error")
+	f := only(t, v, check.DecisionDrift, "error")
 	if v.OK || f.Issue != issue || f.Node != pos {
 		t.Fatalf("drift finding wrong: ok=%v %+v", v.OK, f)
 	}
@@ -111,7 +112,7 @@ func TestStalemateWarns(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	f := only(t, v, Stalemate, "warning")
+	f := only(t, v, check.Stalemate, "warning")
 	if !v.OK { // warnings don't fail a non-strict check
 		t.Fatalf("warning-only check reported not OK: %+v", v)
 	}
@@ -145,7 +146,7 @@ func TestPreferenceCycleAndDuplicateNode(t *testing.T) {
 	for _, f := range v.Findings {
 		kinds[f.Kind] = true
 	}
-	if !kinds[PreferenceCycle] || !kinds[StoreInvariant] {
+	if !kinds[check.PreferenceCycle] || !kinds[check.StoreInvariant] {
 		t.Fatalf("want preference_cycle + store_invariant, got %+v", v.Findings)
 	}
 }

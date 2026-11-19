@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/chazu/dlktk/internal/ibis"
 )
@@ -265,5 +266,30 @@ func TestMapDecisionImport(t *testing.T) {
 	}
 	if got, err := dst.Decisions("d", Now()); err != nil || len(got) != 0 {
 		t.Fatalf("partial import: %v, %v", got, err)
+	}
+}
+
+func TestDecisionAuditLivesInProvenance(t *testing.T) {
+	s := open(t)
+	d := ibis.Decision{Disc: "d", Issue: "i", Position: "p", Decider: "ann", Basis: "trial", Closure: &ibis.ClosureWarnings{
+		RecordedAt: time.Now().UTC().Format(time.RFC3339Nano), Present: []string{"untested_decision"}, Acknowledged: []string{"untested_decision"},
+	}}
+	if err := s.AddDecision(d); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.Export("d")
+	if err != nil || len(rows) != 1 || rows[0].Closure == nil {
+		t.Fatalf("missing exported provenance: %+v, %v", rows, err)
+	}
+	var args map[string]json.RawMessage
+	if err := json.Unmarshal(rows[0].Args, &args); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := args["closure_warnings"]; ok {
+		t.Fatal("audit fields broke the pinned pudl decision schema")
+	}
+	rows[0].Closure.Acknowledged = []string{"review_due"}
+	if _, err := s.ImportAll(rows); err == nil {
+		t.Fatal("accepted acknowledgment of a warning absent at closure")
 	}
 }

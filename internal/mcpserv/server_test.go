@@ -152,3 +152,33 @@ func TestShowOpenAdoptions(t *testing.T) {
 		t.Fatalf("missing adoptions %v", want)
 	}
 }
+
+func TestDecisionWarningAcknowledgment(t *testing.T) {
+	call := harness(t)
+	v, _ := call("new", map[string]any{"title": "trial"})
+	disc := v["id"]
+	v, _ = call("raise", map[string]any{"discussion": disc, "text": "adopt?"})
+	issue := v["id"]
+	v, _ = call("propose", map[string]any{"discussion": disc, "issue": issue, "text": "try it"})
+	args := map[string]any{"discussion": disc, "issue": issue, "position": v["id"], "ack": []string{"untested_decision"}}
+	if _, failed := call("decide", args); !failed {
+		t.Fatal("accepted acknowledgment with no rationale")
+	}
+	args["basis"] = "time-limited trial"
+	if v, failed := call("decide", args); failed {
+		t.Fatalf("decide: %v", v)
+	}
+	v, _ = call("show", map[string]any{"discussion": disc, "node": issue})
+	w := v["decided"].(map[string]any)["closure_warnings"].(map[string]any)
+	if got := w["acknowledged"].([]any); len(got) != 1 || got[0] != "untested_decision" {
+		t.Fatalf("missing acknowledgment: %v", w)
+	}
+	args["ack"] = []string{"review_due"}
+	if _, failed := call("supersede", args); !failed {
+		t.Fatal("accepted an inapplicable acknowledgment")
+	}
+	args["ack"] = []string{"untested_decision"}
+	if v, failed := call("supersede", args); failed {
+		t.Fatalf("supersede: %v", v)
+	}
+}

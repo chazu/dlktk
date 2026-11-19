@@ -18,7 +18,7 @@ Every verb is equally drivable by a human at a terminal and by an agent over JSO
 
 ## Quickstart
 
-Run `command -v dlktk` to see which executable your shell selects. Run `dlktk discover --format json | jq -r .version` to see its contract version. From the checkout, compare it with `go run ./cmd/dlktk discover --format json | jq -r .version`. To use the checkout, run `make build` and set `DLKTK="$PWD/dlktk"` before starting the example.
+Run `command -v dlktk` to see which executable your shell selects. Run `dlktk discover --format json | jq -r .version` to see its contract version. From the checkout, compare it with `GOWORK=off go run ./cmd/dlktk discover --format json | jq -r .version`. To use the checkout, run `GOWORK=off make build` and set `DLKTK="$PWD/dlktk"` before starting the example.
 
 This Bash example uses jq and a temporary store. It checks that RWLock becomes the only justified position.
 
@@ -38,7 +38,8 @@ This Bash example uses jq and a temporary store. It checks that RWLock becomes t
   objection=$(move object "$rwlock" "a writer can starve" --author ann | jq -er .id)
   move object "$objection" "this lock queues a waiting writer ahead of new readers" --author bob
   move prefer "$rwlock" "$mutex" --basis throughput
-  move status "$issue" | jq -e --arg id "$rwlock"     '[.[0].positions[] | select(.label == "IN") | .id] == [$id]'
+  move status "$issue" | jq -e --arg id "$rwlock" \
+    '[.[0].positions[] | select(.label == "IN") | .id] == [$id]'
 )
 ```
 
@@ -57,6 +58,10 @@ Wicked-problem support (divergence, exploration, plural values — see [`wicked-
 Output adapts to its consumer: text on a terminal, JSON when piped (override with `--format`). Text output is colorized by grounded label and word-wrapped to the terminal (`--color auto|always|never`, honors `NO_COLOR`); `why` and `moves` print their suggestions as runnable `dlktk …` command lines, and read errors add a one-line `hint:`.
 
 Decisions are closing acts: a bare re-`decide` on a decided issue is rejected; overturning one is `supersede <issue> <position> --basis <label>`, which records why and links the prior decision.
+
+Use `--ack untested_decision --basis "release owner accepts the review risk"` on `decide` or `supersede` to acknowledge an untested adoption. Repeat `--ack` for each warning. Include the node for a finding on another node, such as `--ack defeated_assumption:<premise-id>`. MCP accepts the same keys in an `ack` array. The rationale applies to this decision's acknowledgments.
+
+`show` and `status` expose the warning keys present at closure and the acknowledged subset in their JSON decision records. A later warning still appears in `check`. Only a warning present at closure can trigger a missing acknowledgment on a new decision. Exports carry closure warnings alongside the decision arguments. The store keeps them in the fact provenance. For older records, the checker looks for warning-specific words or the affected node in that decision's basis. It reports the original closure state as unknown.
 
 Multi-agent identity: `--author <id>` is the stable identity attributed to a move and the thing `concede`/`retract` ownership is checked against; `--role <persona>` is the optional hat a move is argued under and is kept distinct from identity (two agents sharing a persona still own only their own nodes). The first move under a role auto-records an author↔role binding; `roster` lists the bindings, `roster <author> <role>` pre-declares one (design §16 Q8).
 

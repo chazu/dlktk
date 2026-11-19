@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chazu/dlktk/internal/af"
+	"github.com/chazu/dlktk/internal/check"
 	"github.com/chazu/dlktk/internal/ibis"
 	"github.com/chazu/dlktk/internal/id"
 	"github.com/chazu/dlktk/internal/render"
@@ -379,7 +380,7 @@ func (m *Mover) Prefer(disc, winner, loser, basis string) (string, []string, err
 // decision must go through Supersede so the reversal carries a recorded basis
 // (design §16 Q4). reviewBy (unix seconds, 0 = none) records a re-examination
 // horizon: check reports the decision once the horizon passes.
-func (m *Mover) Decide(disc, issue, position, basis string, reviewBy int64) error {
+func (m *Mover) Decide(disc, issue, position, basis string, reviewBy int64, ack ...string) error {
 	if err := validReviewBy(issue, reviewBy); err != nil {
 		return err
 	}
@@ -422,12 +423,21 @@ func (m *Mover) Decide(disc, issue, position, basis string, reviewBy int64) erro
 			return err
 		}
 		labels := fw.Grounded()
-		return s.AddDecision(ibis.Decision{
+		return recordDecision(s, g, ibis.Decision{
 			Disc: disc, Issue: issue, Position: position, Basis: basis,
 			Decider: m.author, Override: labels[position] != af.IN,
 			ReviewBy: reviewBy,
-		})
+		}, ack)
 	})
+}
+
+func recordDecision(s *store.Store, g *ibis.Graph, d ibis.Decision, ack []string) error {
+	warnings, err := check.AtClosure(s, d, g, ack)
+	if err != nil {
+		return err
+	}
+	d.Closure = warnings
+	return s.AddDecision(d)
 }
 
 // validReviewBy rejects a review horizon that is already in the past.
@@ -446,7 +456,7 @@ func validReviewBy(issue string, reviewBy int64) error {
 // position whose verdict differs across them — so it cannot become a universal
 // stalemate silencer; --review-by is mandatory so the deferral expires on a
 // clock; and the map is recomputed by `check` (map_drift), never frozen.
-func (m *Mover) DecideMap(disc, issue, basis string, reviewBy int64) error {
+func (m *Mover) DecideMap(disc, issue, basis string, reviewBy int64, ack ...string) error {
 	if reviewBy == 0 {
 		return &ibis.IllegalMove{Node: issue,
 			Detail: "a map decision requires --review-by: a deferred value conflict must carry an expiry, not stand indefinitely"}
@@ -471,10 +481,10 @@ func (m *Mover) DecideMap(disc, issue, basis string, reviewBy int64) error {
 			return &ibis.IllegalMove{Node: issue,
 				Detail: fmt.Sprintf("issue %s is already decided; use `supersede %s --map --basis <label> --review-by <T>` to convert it", issue, issue)}
 		}
-		return s.AddDecision(ibis.Decision{
+		return recordDecision(s, g, ibis.Decision{
 			Disc: disc, Issue: issue, Basis: basis, Kind: ibis.MapDecision,
 			Decider: m.author, ReviewBy: reviewBy,
-		})
+		}, ack)
 	})
 }
 
@@ -510,7 +520,7 @@ func validMapTarget(g *ibis.Graph, issue string) error {
 // supersedes (design §16 Q4). Closing the prior decision and recording the new
 // one are atomic: no window where the issue stands undecided. Superseding with
 // the same position and a fresh reviewBy is how a review horizon is re-armed.
-func (m *Mover) Supersede(disc, issue, position, basis string, reviewBy int64) error {
+func (m *Mover) Supersede(disc, issue, position, basis string, reviewBy int64, ack ...string) error {
 	if basis == "" {
 		return &ibis.IllegalMove{Node: issue,
 			Detail: "supersede requires --basis: record why the prior decision is overturned"}
@@ -567,11 +577,11 @@ func (m *Mover) Supersede(disc, issue, position, basis string, reviewBy int64) e
 		if err := s.SupersedeDecision(disc, issue, supPos); err != nil {
 			return err
 		}
-		return s.AddDecision(ibis.Decision{
+		return recordDecision(s, g, ibis.Decision{
 			Disc: disc, Issue: issue, Position: position, Basis: basis,
 			Decider: m.author, Override: labels[position] != af.IN,
 			Supersedes: prior.Position, SupersededKind: prior.Kind, ReviewBy: reviewBy,
-		})
+		}, ack)
 	})
 }
 
@@ -579,7 +589,7 @@ func (m *Mover) Supersede(disc, issue, position, basis string, reviewBy int64) e
 // decision (position->map when the contest turns out to be value-driven, or
 // map->map to re-affirm on a fresh horizon). The superseded decision's kind is
 // recorded so the transition is legible (wicked-problems-2.md item 7).
-func (m *Mover) SupersedeMap(disc, issue, basis string, reviewBy int64) error {
+func (m *Mover) SupersedeMap(disc, issue, basis string, reviewBy int64, ack ...string) error {
 	if basis == "" {
 		return &ibis.IllegalMove{Node: issue,
 			Detail: "supersede requires --basis: record why the prior decision is overturned"}
@@ -613,10 +623,10 @@ func (m *Mover) SupersedeMap(disc, issue, basis string, reviewBy int64) error {
 		if err := s.SupersedeDecision(disc, issue, ""); err != nil {
 			return err
 		}
-		return s.AddDecision(ibis.Decision{
+		return recordDecision(s, g, ibis.Decision{
 			Disc: disc, Issue: issue, Basis: basis, Kind: ibis.MapDecision,
 			Decider: m.author, Supersedes: prior.Position, SupersededKind: prior.Kind, ReviewBy: reviewBy,
-		})
+		}, ack)
 	})
 }
 

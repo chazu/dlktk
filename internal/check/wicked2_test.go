@@ -1,4 +1,4 @@
-package check
+package check_test
 
 // Arc two, item 1 (wicked-problems-2.md): untested_decision must ignore rival
 // attacks and resist self-dealing — the exercise's decided hybrid reached
@@ -8,6 +8,7 @@ package check
 import (
 	"testing"
 
+	"github.com/chazu/dlktk/internal/check"
 	"github.com/chazu/dlktk/internal/proto"
 )
 
@@ -33,11 +34,11 @@ func TestUntestedDecisionIgnoresRivalAttacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, UntestedDecision) != 1 {
+	if findKind(v, check.UntestedDecision) != 1 {
 		t.Fatalf("want exactly one untested_decision: %+v", v)
 	}
 	for _, f := range v.Findings {
-		if f.Kind == UntestedDecision && f.Node != h {
+		if f.Kind == check.UntestedDecision && f.Node != h {
 			t.Fatalf("finding must name the hybrid: %+v", f)
 		}
 	}
@@ -56,7 +57,7 @@ func TestUntestedDecisionResistsSelfObjection(t *testing.T) {
 	if err := m.Decide("d", issue, pos, "survived scrutiny", 0); err != nil {
 		t.Fatal(err)
 	}
-	if findKind(run(t, s), UntestedDecision) != 1 {
+	if findKind(run(t, s), check.UntestedDecision) != 1 {
 		t.Fatal("self-authored objection must not count as a test")
 	}
 
@@ -71,7 +72,7 @@ func TestUntestedDecisionResistsSelfObjection(t *testing.T) {
 	if err := m2.Decide("d", issue2, pos2, "survived scrutiny", 0); err != nil {
 		t.Fatal(err)
 	}
-	if findKind(run(t, s2), UntestedDecision) != 0 {
+	if findKind(run(t, s2), check.UntestedDecision) != 0 {
 		t.Fatal("cross-author objection beaten by counter-argument must count as a test")
 	}
 }
@@ -90,7 +91,7 @@ func TestUntestedDecisionReArmsAfterPreference(t *testing.T) {
 	if err := m.Decide("d", issue, pos, "preferred through", 0); err != nil {
 		t.Fatal(err)
 	}
-	if findKind(run(t, s), UntestedDecision) != 1 {
+	if findKind(run(t, s), check.UntestedDecision) != 1 {
 		t.Fatal("preference-excused objection must not count as a test")
 	}
 }

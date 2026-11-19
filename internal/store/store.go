@@ -3,10 +3,13 @@
 package store
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/chazu/pudl/pkg/factstore"
 
@@ -132,7 +135,16 @@ func (s *Store) AddLink(l ibis.Link) error { return s.add(relLink, l, l.Author) 
 func (s *Store) AddPreference(p ibis.Preference) error {
 	return s.add(relPreference, p, p.Author)
 }
-func (s *Store) AddDecision(d ibis.Decision) error { return s.add(relDecision, d, d.Decider) }
+func (s *Store) AddDecision(d ibis.Decision) error {
+	if d.Closure == nil {
+		return s.add(relDecision, d, d.Decider)
+	}
+	args, err := json.Marshal(d)
+	if err != nil {
+		return fail.Store("marshal decision: %v", err)
+	}
+	return s.Import(ExportRecord{Relation: relDecision, Args: args, Source: d.Decider, ValidStart: time.Now().Unix(), Closure: d.Closure})
+}
 func (s *Store) SetIssueCard(c ibis.IssueCard) error {
 	return s.add(relIssueCard, c, "")
 }
@@ -195,8 +207,27 @@ func (s *Store) Preferences(disc string, w When) ([]ibis.Preference, error) {
 }
 
 func (s *Store) Decisions(disc string, w When) ([]ibis.Decision, error) {
-	all, err := scan[ibis.Decision](s, relDecision, w)
-	return filter(all, disc, func(d ibis.Decision) string { return d.Disc }), err
+	facts, err := s.ops.QueryFacts(factstore.FactFilter{Relation: relDecision, TxAt: w.Tx, ValidAt: w.Valid})
+	if err != nil {
+		return nil, fail.Store("query decisions: %v", err)
+	}
+	var out []ibis.Decision
+	for _, f := range facts {
+		var d ibis.Decision
+		if err := json.Unmarshal([]byte(f.Args), &d); err != nil {
+			return nil, fail.Store("read decision %s: %v", f.ID, err)
+		}
+		if d.Disc != disc {
+			continue
+		}
+		rec, err := exportFact(f)
+		if err != nil {
+			return nil, err
+		}
+		d.Closure = rec.Closure
+		out = append(out, d)
+	}
+	return out, nil
 }
 
 // Reframes returns a discussion's framing supersessions.
@@ -379,12 +410,30 @@ func (s *Store) RetractNode(nid string) error {
 // (Event == retract|invalidate) that close a previously asserted fact,
 // referenced by its content-addressed id.
 type ExportRecord struct {
-	Relation   string          `json:"relation"`
-	Args       json.RawMessage `json:"args,omitempty"`
-	Source     string          `json:"source,omitempty"`
-	ValidStart int64           `json:"valid_start,omitempty"`
-	Event      string          `json:"event,omitempty"` // "" (assert) | "retract" | "invalidate"
-	Ref        string          `json:"ref,omitempty"`   // content-addressed fact id the event applies to
+	Closure    *ibis.ClosureWarnings `json:"closure_warnings,omitempty"`
+	Relation   string                `json:"relation"`
+	Args       json.RawMessage       `json:"args,omitempty"`
+	Source     string                `json:"source,omitempty"`
+	ValidStart int64                 `json:"valid_start,omitempty"`
+	Event      string                `json:"event,omitempty"` // "" (assert) | "retract" | "invalidate"
+	Ref        string                `json:"ref,omitempty"`   // content-addressed fact id the event applies to
+}
+
+// Decision arguments follow pudl's built-in schema. The audit uses fact provenance.
+type decisionProvenance struct {
+	Closure *ibis.ClosureWarnings `json:"closure_warnings,omitempty"`
+}
+
+func exportFact(f factstore.Fact) (ExportRecord, error) {
+	rec := ExportRecord{Relation: f.Relation, Args: json.RawMessage(f.Args), Source: f.Source, ValidStart: f.ValidStart}
+	if f.Relation == relDecision && f.Provenance != "" {
+		var meta decisionProvenance
+		if err := json.Unmarshal([]byte(f.Provenance), &meta); err != nil {
+			return rec, fail.Store("read decision provenance %s: %v", f.ID, err)
+		}
+		rec.Closure = meta.Closure
+	}
+	return rec, nil
 }
 
 // Export gathers the current (live) dlktk/* facts for a discussion as an
@@ -413,12 +462,11 @@ func (s *Store) Export(disc string) ([]ExportRecord, error) {
 					}
 				}
 			}
-			recs = append(recs, ExportRecord{
-				Relation:   rel,
-				Args:       json.RawMessage(f.Args),
-				Source:     f.Source,
-				ValidStart: f.ValidStart,
-			})
+			rec, err := exportFact(f)
+			if err != nil {
+				return err
+			}
+			recs = append(recs, rec)
 		}
 		return nil
 	}
@@ -501,8 +549,12 @@ func (s *Store) ExportHistory(disc string) ([]ExportRecord, error) {
 					}
 				}
 			}
+			rec, err := exportFact(f)
+			if err != nil {
+				return err
+			}
 			all = append(all, histRec{
-				rec: ExportRecord{Relation: rel, Args: json.RawMessage(f.Args), Source: f.Source, ValidStart: f.ValidStart},
+				rec: rec,
 				at:  f.TxStart, rank: 0, tie: f.ID,
 			})
 			if f.ValidEnd != nil {
@@ -593,12 +645,27 @@ func (s *Store) Import(rec ExportRecord) error {
 	if !strings.HasPrefix(rec.Relation, "dlktk/") {
 		return &ibis.IllegalMove{Detail: fmt.Sprintf("refusing to import non-dlktk relation %q", rec.Relation)}
 	}
-	_, err := s.ops.AddFact(factstore.Fact{
-		Relation:   rec.Relation,
-		Args:       string(rec.Args),
-		Source:     rec.Source,
-		ValidStart: rec.ValidStart,
-	})
+	fact := factstore.Fact{Relation: rec.Relation, Args: string(rec.Args), Source: rec.Source, ValidStart: rec.ValidStart}
+	if rec.Closure != nil {
+		// Include closure provenance in the content address. pudl's default hash omits it.
+		// Canonicalize arguments so JSON object ordering cannot change a history reference.
+		var args map[string]json.RawMessage
+		if err := json.Unmarshal(rec.Args, &args); err != nil {
+			return fail.Store("read decision arguments: %v", err)
+		}
+		canonical, err := json.Marshal(args)
+		if err != nil {
+			return fail.Store("canonicalize decision arguments: %v", err)
+		}
+		meta, err := json.Marshal(decisionProvenance{Closure: rec.Closure})
+		if err != nil {
+			return fail.Store("marshal decision provenance: %v", err)
+		}
+		fact.Provenance = string(meta)
+		digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d\x00%s\x00%s", rec.Relation, canonical, rec.ValidStart, rec.Source, meta)))
+		fact.ID = fmt.Sprintf("%x", digest)
+	}
+	_, err := s.ops.AddFact(fact)
 	if err != nil {
 		return fail.Store("import %s: %v", rec.Relation, err)
 	}
@@ -671,6 +738,9 @@ func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Pr
 		return nil
 	}
 
+	if rec.Closure != nil && (rec.Relation != relDecision || rec.Event != "") {
+		return bad("closure_warnings belongs to a decision assertion")
+	}
 	if rec.Event != "" {
 		if rec.Event != EventRetract && rec.Event != EventInvalidate {
 			return bad("event %q invalid (retract or invalidate)", rec.Event)
@@ -740,6 +810,19 @@ func validateRecord(rec ExportRecord, line int, prefsByDisc map[string][]ibis.Pr
 		}
 		if err := firstErr(require("disc", v.Disc), require("issue", v.Issue)); err != nil {
 			return err
+		}
+		if w := rec.Closure; w != nil {
+			if rec.ValidStart == 0 {
+				return bad("audited decisions require valid_start")
+			}
+			if _, err := time.Parse(time.RFC3339Nano, w.RecordedAt); err != nil {
+				return bad("invalid closure recorded_at")
+			}
+			for _, key := range w.Acknowledged {
+				if strings.TrimSpace(v.Basis) == "" || key == "" || !slices.Contains(w.Present, key) {
+					return bad("acknowledgment %q requires a decision basis and a matching warning at closure", key)
+				}
+			}
 		}
 		if v.Kind == ibis.MapDecision {
 			if v.Position != "" || v.ReviewBy <= 0 {

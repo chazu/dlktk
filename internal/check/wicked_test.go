@@ -1,13 +1,14 @@
-package check
+package check_test
 
 import (
 	"testing"
 	"time"
 
+	"github.com/chazu/dlktk/internal/check"
 	"github.com/chazu/dlktk/internal/store"
 )
 
-func findKind(v View, kind string) int {
+func findKind(v check.View, kind string) int {
 	n := 0
 	for _, f := range v.Findings {
 		if f.Kind == kind {
@@ -27,7 +28,7 @@ func TestUntestedDecisionWarns(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, UntestedDecision) != 1 {
+	if findKind(v, check.UntestedDecision) != 1 {
 		t.Fatalf("want untested_decision warning: %+v", v)
 	}
 	if !v.OK {
@@ -50,18 +51,18 @@ func TestReviewDueFiresAfterHorizon(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	before, err := Run(s, []string{"d"}, store.Now(), horizon-1)
+	before, err := check.Run(s, []string{"d"}, store.Now(), horizon-1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findKind(before, ReviewDue) != 0 {
+	if findKind(before, check.ReviewDue) != 0 {
 		t.Fatalf("review_due fired before the horizon: %+v", before)
 	}
-	after, err := Run(s, []string{"d"}, store.Now(), horizon+1)
+	after, err := check.Run(s, []string{"d"}, store.Now(), horizon+1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findKind(after, ReviewDue) != 1 {
+	if findKind(after, check.ReviewDue) != 1 {
 		t.Fatalf("want review_due after the horizon: %+v", after)
 	}
 }
@@ -83,14 +84,14 @@ func TestDefeatedAssumptionWarns(t *testing.T) {
 	if err := m.Decide("d", issue, pos, "call", 0); err != nil {
 		t.Fatal(err)
 	}
-	if findKind(run(t, s), DefeatedAssumption) != 0 {
+	if findKind(run(t, s), check.DefeatedAssumption) != 0 {
 		t.Fatal("assumption not yet defeated; no warning expected")
 	}
 	if _, err := m.Object("d", assumption, "traffic doubled last quarter", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, DefeatedAssumption) != 1 {
+	if findKind(v, check.DefeatedAssumption) != 1 {
 		t.Fatalf("want defeated_assumption warning: %+v", v)
 	}
 }
@@ -106,14 +107,14 @@ func TestReframedStalemateSuppressed(t *testing.T) {
 	if _, err := m.Propose("d", issue, "b", ""); err != nil {
 		t.Fatal(err)
 	}
-	if findKind(run(t, s), Stalemate) != 1 {
+	if findKind(run(t, s), check.Stalemate) != 1 {
 		t.Fatal("fixture must stalemate before the reframe")
 	}
 	if _, err := m.Reframe("d", issue, "better question?", "false dichotomy", ""); err != nil {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, Stalemate) != 0 {
+	if findKind(v, check.Stalemate) != 0 {
 		t.Fatalf("dead framing still warns: %+v", v)
 	}
 }

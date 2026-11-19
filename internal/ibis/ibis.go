@@ -78,14 +78,15 @@ type Preference struct {
 // with the supersede move (design §16 Q4: overturning requires a recorded basis
 // and a link back; a bare re-decide is rejected).
 type Decision struct {
-	Disc       string `json:"disc"`
-	Issue      string `json:"issue"`
-	Position   string `json:"position"` // empty for a map decision (the object is the whole issue's audience map)
-	Basis      string `json:"basis"`
-	Decider    string `json:"decider"`
-	Override   bool   `json:"override"`
-	Supersedes string `json:"supersedes,omitempty"`
-	ReviewBy   int64  `json:"review_by,omitempty"` // unix seconds; the recorded re-examination horizon (0 = none)
+	Closure    *ClosureWarnings `json:"-"` // Stored in the decision fact provenance.
+	Disc       string           `json:"disc"`
+	Issue      string           `json:"issue"`
+	Position   string           `json:"position"` // empty for a map decision (the object is the whole issue's audience map)
+	Basis      string           `json:"basis"`
+	Decider    string           `json:"decider"`
+	Override   bool             `json:"override"`
+	Supersedes string           `json:"supersedes,omitempty"`
+	ReviewBy   int64            `json:"review_by,omitempty"` // unix seconds; the recorded re-examination horizon (0 = none)
 	// Kind distinguishes a conventional position decision (empty/"position")
 	// from a "map" decision, whose object is the issue's audience-conditional
 	// verdict map rather than a single winner (wicked-problems-2.md item 7). A
@@ -95,6 +96,13 @@ type Decision struct {
 	// SupersededKind records the kind of the decision this one overturned, so a
 	// map->position or position->map transition is legible on the record.
 	SupersededKind string `json:"superseded_kind,omitempty"`
+}
+
+// ClosureWarnings records finding keys for this decision. Basis gives the rationale.
+type ClosureWarnings struct {
+	RecordedAt   string   `json:"recorded_at"`
+	Present      []string `json:"present,omitempty"`
+	Acknowledged []string `json:"acknowledged,omitempty"`
 }
 
 // Decision kinds. The empty string is a conventional position decision.

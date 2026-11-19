@@ -39,15 +39,15 @@ If you just need a fact lookup or a quick opinion, this is overkill.
 ## Setup
 
 **Version handshake (mandatory first move).** This skill assumes contract
-version **0.17.0 or later** (`MIN_CONTRACT` below). Run `dlktk discover` first
+version **0.19.0 or later** (`MIN_CONTRACT` below). Run `dlktk discover` first
 and read its `version`:
 
 ```
 dlktk discover --format json     # the full contract: moves, reads, flags, exit codes
 ```
 
-- If `version` ≥ `0.17.0`, proceed.
-- If `version` < `0.17.0`, **stop and warn the user visibly**: the installed
+- If `version` ≥ `0.19.0`, proceed.
+- If `version` < `0.19.0`, **stop and warn the user visibly**: the installed
   `dlktk` predates the playbook this skill teaches (rival-aware tested-ness,
   synthesis discipline, value-map closure, the warnings-are-work-items rule).
   Continuing would run a stale playbook against a newer engine or vice-versa —
@@ -55,7 +55,7 @@ dlktk discover --format json     # the full contract: moves, reads, flags, exit 
   `dlktk` before continuing.
 
 The agent that loads this skill is the checker — this works on machines a
-`make` never touched. `MIN_CONTRACT = 0.17.0`.
+`make` never touched. `MIN_CONTRACT = 0.19.0`.
 
 ```
 dlktk new "<title>" --subject "q:<the question>"   # creates + selects a discussion
@@ -272,13 +272,15 @@ objections); or a move budget runs out.
   has drifted (`map_drift`), a decided synthesis scrutinised or decided only
   within its own author (`single_author_convergence`), a preference made before
   two authors staked positions (`premature_preference`), and an issue decided
-  over a warning its basis never acknowledged (`unacknowledged_warning`). The
+  over a warning the decider never acknowledged (`unacknowledged_warning`). The
   note `mapped_pending_governance` (never fatal) flags a mapped issue whose
   governance question is still unraised.
-- **A warning is a work item.** Before any convergent move (`prefer`/`decide`/
-  `supersede`), clear the warnings on that issue — or, if you proceed anyway,
-  name them in `--basis` (the finding kind, or an override rationale). Closing
-  over an unacknowledged warning draws `unacknowledged_warning`.
+- Resolve a warning before closing the decision, or record it with
+  `--ack <kind>` and explain the rationale with `--basis`. For a warning
+  on another node, use `--ack <kind>:<node>`. Repeat the flag for each
+  finding. Each decision records its own warnings at closure. Later warnings
+  still appear in `check`. Earlier decisions retain their original basis.
+
 
 ## Postmortem
 

@@ -8,6 +8,7 @@ package check
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -39,9 +40,7 @@ const (
 	// carried at least two positions from at least two authors — a value call
 	// stated against a single candidate is a rubber stamp (warning).
 	PrematurePreference = "premature_preference"
-	// UnacknowledgedWarning fires when a decided issue carries another warning
-	// that its decision basis does not acknowledge — closing over a live warning
-	// unremarked. A warning is a work item, not noise (warning).
+	// UnacknowledgedWarning identifies a decision closed over an unacknowledged warning.
 	UnacknowledgedWarning = "unacknowledged_warning"
 	// MappedPendingGovernance is a non-fatal note (never fails a check, even
 	// under --strict): a value-map decision defers "whose ranking governs?" and
@@ -57,6 +56,7 @@ type Finding struct {
 	Issue      string `json:"issue,omitempty"`
 	Node       string `json:"node,omitempty"`
 	Detail     string `json:"detail"`
+	position   string // Decision that produced this finding, including premise findings.
 }
 
 // View is the check envelope. OK means no error-severity findings; warnings
@@ -76,7 +76,7 @@ func Run(s *store.Store, discs []string, w store.When, nowUnix int64) (View, err
 	sorted := append([]string{}, discs...)
 	sort.Strings(sorted)
 	for _, disc := range sorted {
-		fs, err := runOne(s, disc, w, nowUnix)
+		fs, err := runOne(s, disc, w, nowUnix, nil)
 		if err != nil {
 			return View{}, err
 		}
@@ -92,7 +92,7 @@ func Run(s *store.Store, discs []string, w store.When, nowUnix int64) (View, err
 	return v, nil
 }
 
-func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding, error) {
+func runOne(s *store.Store, disc string, w store.When, nowUnix int64, pending *ibis.Decision) ([]Finding, error) {
 	var out []Finding
 
 	// Store invariant: a node id must be current in at most one fact (§3.1).
@@ -137,6 +137,10 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 		return nil, err
 	}
 
+	if pending != nil {
+		decs = append(decs, *pending)
+	}
+
 	// Nodes whose untested_decision fires, for the item-3 suppression rule:
 	// one defect, one finding (untested wins over self-elevated).
 	untestedNodes := map[string]bool{}
@@ -148,6 +152,7 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 		// (wicked-problems-2.md item 6).
 		for di := range st.Decisions {
 			d := st.Decisions[di]
+			start := len(out)
 			if !d.Override {
 				// The position was IN when decided (no override flag); if it is no
 				// longer IN, the dialectic has moved out from under the decision.
@@ -217,6 +222,9 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 					})
 				}
 			}
+			for i := start; i < len(out); i++ {
+				out[i].position = d.Position
+			}
 		}
 		if st.Stalemate && st.ReframedTo == "" {
 			// A stalemate under a reframed (dead) framing is no longer the
@@ -269,11 +277,9 @@ func runOne(s *store.Store, disc string, w store.When, nowUnix int64) ([]Finding
 	}
 	out = append(out, pf...)
 
-	// unacknowledged_warning (item 9): a decided issue whose decision closed over
-	// another live warning without naming it in the basis. Runs last, over every
-	// finding accumulated above, so a warning is a work item — resolve it before
-	// the convergent move, or record the override rationale in --basis.
-	out = append(out, unacknowledgedWarnings(disc, decs, out)...)
+	if pending == nil {
+		out = append(out, unacknowledgedWarnings(g, decs, out)...)
+	}
 	return out, nil
 }
 
@@ -330,79 +336,108 @@ func prematurePreferences(s *store.Store, g *ibis.Graph, disc string) ([]Finding
 	return out, nil
 }
 
-// acknowledgmentTokens maps a finding kind to substrings whose presence in a
-// decision basis counts as acknowledging it. Any universal override token
-// (below) also acknowledges any warning.
+// Legacy decision bases used warning names, node IDs, or descriptive words.
 var acknowledgmentTokens = map[string][]string{
 	UntestedDecision:        {"untested"},
 	BundleSynthesis:         {"bundle", "drop"},
 	SelfElevatedSynthesis:   {"elevat", "subsum", "inherit"},
 	DefeatedAssumption:      {"assumption", "premise"},
-	ReviewDue:               {"review", "horizon", "stale"},
-	MapDrift:                {"drift", "map"},
 	SingleAuthorConvergence: {"author", "independen", "convergence", "adversar"},
 	PrematurePreference:     {"premature", "divergen"},
 	Stalemate:               {"stalemate", "deadlock"},
 }
 
-var universalAckTokens = []string{"override", "acknowledg", "despite", "notwithstanding", "waive", "aware", "accepted", "noted"}
+// warningKey identifies a finding relative to one standing decision.
+func warningKey(g *ibis.Graph, d ibis.Decision, f Finding) string {
+	if f.Issue != d.Issue || f.Severity != "warning" {
+		return ""
+	}
+	if f.position != "" && f.position != d.Position {
+		return ""
+	}
+	if g.IssueCards[d.Issue] == ibis.Open && f.position == "" && f.Node != "" && f.Node != d.Position {
+		return ""
+	}
+	if f.Node == "" || f.Node == d.Position {
+		return f.Kind
+	}
+	return f.Kind + ":" + f.Node
+}
 
-// unacknowledgedWarnings emits one finding per decided issue that carries a
-// warning its decision basis does not acknowledge. Acknowledgment is
-// deliberately lenient — naming the finding's node, a keyword for its kind, or
-// any override token clears it — because the obligation is to *remark on* the
-// warning, not to pass a vocabulary test. (A pragmatic reading of "predates the
-// decision": the warning is live at check time on an already-decided issue.)
-func unacknowledgedWarnings(disc string, decs []ibis.Decision, found []Finding) []Finding {
-	basisByIssue := map[string]string{}
-	decided := map[string]bool{}
-	for _, d := range decs {
-		if d.Disc != disc {
-			continue
-		}
-		decided[d.Issue] = true
-		basisByIssue[d.Issue] += " " + strings.ToLower(d.Basis)
+// AtClosure evaluates the pending decision inside the move transaction.
+// Supersede has already retired the prior decision on this target.
+func AtClosure(s *store.Store, d ibis.Decision, g *ibis.Graph, ack []string) (*ibis.ClosureWarnings, error) {
+	found, err := runOne(s, d.Disc, store.Now(), time.Now().Unix(), &d)
+	if err != nil {
+		return nil, err
 	}
-	acknowledges := func(basis string, f Finding) bool {
-		if f.Node != "" && strings.Contains(basis, strings.ToLower(f.Node)) {
-			return true
-		}
-		for _, tok := range acknowledgmentTokens[f.Kind] {
-			if strings.Contains(basis, tok) {
-				return true
-			}
-		}
-		for _, tok := range universalAckTokens {
-			if strings.Contains(basis, tok) {
-				return true
-			}
-		}
-		return false
-	}
-	unresolved := map[string][]string{}
-	order := []string{}
+	w := &ibis.ClosureWarnings{RecordedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	for _, f := range found {
-		if f.Issue == "" || f.Severity != "warning" || f.Kind == UnacknowledgedWarning {
-			continue
+		if key := warningKey(g, d, f); key != "" {
+			w.Present = append(w.Present, key)
 		}
-		if !decided[f.Issue] {
-			continue
-		}
-		if acknowledges(basisByIssue[f.Issue], f) {
-			continue
-		}
-		if _, ok := unresolved[f.Issue]; !ok {
-			order = append(order, f.Issue)
-		}
-		unresolved[f.Issue] = append(unresolved[f.Issue], f.Kind)
 	}
+	slices.Sort(w.Present)
+	w.Present = slices.Compact(w.Present)
+	for _, key := range ack {
+		if strings.TrimSpace(d.Basis) == "" {
+			return nil, &ibis.IllegalMove{Node: d.Issue, Detail: "acknowledging a warning requires a rationale in the decision basis"}
+		}
+		if !slices.Contains(w.Present, key) {
+			return nil, &ibis.IllegalMove{Node: d.Issue, Detail: fmt.Sprintf("warning %q does not apply to this decision; warnings at closure: %v", key, w.Present)}
+		}
+		w.Acknowledged = append(w.Acknowledged, key)
+	}
+	slices.Sort(w.Acknowledged)
+	w.Acknowledged = slices.Compact(w.Acknowledged)
+	return w, nil
+}
+
+func unacknowledgedWarnings(g *ibis.Graph, decs []ibis.Decision, found []Finding) []Finding {
 	var out []Finding
-	for _, issue := range order {
-		out = append(out, Finding{
-			Kind: UnacknowledgedWarning, Severity: "warning", Discussion: disc, Issue: issue,
-			Detail: fmt.Sprintf("issue %s was decided over live warning(s) [%s] that the decision basis does not acknowledge — resolve them before deciding, or record the override rationale in --basis (name the warning or say why you proceed)", issue, strings.Join(unresolved[issue], ", ")),
-		})
+	for _, d := range decs {
+		var missing []string
+		for _, f := range found {
+			key := warningKey(g, d, f)
+			if key == "" {
+				continue
+			}
+			if w := d.Closure; w != nil {
+				if slices.Contains(w.Present, key) && !slices.Contains(w.Acknowledged, key) {
+					missing = append(missing, key)
+				}
+				continue
+			}
+			// Legacy facts have no closure snapshot. A deadline or map drift is always later.
+			if f.Kind == ReviewDue || f.Kind == MapDrift {
+				continue
+			}
+			basis := strings.ToLower(d.Basis)
+			matched := f.Node != "" && strings.Contains(basis, strings.ToLower(f.Node))
+			for _, token := range acknowledgmentTokens[f.Kind] {
+				matched = matched || strings.Contains(basis, token)
+			}
+			if !matched {
+				missing = append(missing, key)
+			}
+		}
+		if len(missing) > 0 {
+			slices.Sort(missing)
+			detail := "warnings present at closure"
+			if d.Closure == nil {
+				detail = "current warnings on a legacy decision with unknown closure state"
+			}
+			out = append(out, Finding{Kind: UnacknowledgedWarning, Severity: "warning", Discussion: d.Disc, Issue: d.Issue, Node: d.Position,
+				Detail: fmt.Sprintf("%s without acknowledgment: %s", detail, strings.Join(slices.Compact(missing), ", "))})
+		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Issue != out[j].Issue {
+			return out[i].Issue < out[j].Issue
+		}
+		return out[i].Node < out[j].Node
+	})
+
 	return out
 }
 

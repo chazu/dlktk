@@ -59,14 +59,15 @@ type PositionView struct {
 // DecidedView is the standing decision on an issue, if any. A map decision has
 // an empty Position (its object is the issue's audience map) and Kind "map".
 type DecidedView struct {
-	Position       string `json:"position,omitempty"`
-	Basis          string `json:"basis,omitempty"`
-	Decider        string `json:"decider"`
-	Override       bool   `json:"override"`
-	Supersedes     string `json:"supersedes,omitempty"`
-	ReviewBy       int64  `json:"review_by,omitempty"`
-	Kind           string `json:"kind,omitempty"`
-	SupersededKind string `json:"superseded_kind,omitempty"`
+	Closure        *ibis.ClosureWarnings `json:"closure_warnings,omitempty"`
+	Position       string                `json:"position,omitempty"`
+	Basis          string                `json:"basis,omitempty"`
+	Decider        string                `json:"decider"`
+	Override       bool                  `json:"override"`
+	Supersedes     string                `json:"supersedes,omitempty"`
+	ReviewBy       int64                 `json:"review_by,omitempty"`
+	Kind           string                `json:"kind,omitempty"`
+	SupersededKind string                `json:"superseded_kind,omitempty"`
 }
 
 // IssueStatus is the status envelope for one issue (design §8.3).
@@ -150,7 +151,7 @@ func issueDecisions(issue string, decs []ibis.Decision) (positions []DecidedView
 		if d.Issue != issue {
 			continue
 		}
-		dv := DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy, Kind: d.Kind, SupersededKind: d.SupersededKind}
+		dv := DecidedView{Closure: d.Closure, Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy, Kind: d.Kind, SupersededKind: d.SupersededKind}
 		if d.Kind == ibis.MapDecision {
 			m := dv
 			mapped = &m

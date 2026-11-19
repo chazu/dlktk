@@ -373,38 +373,66 @@ func (x *srv) prefer(ctx context.Context, req *mcp.CallToolRequest, a preferArgs
 }
 
 type decideArgs struct {
-	Discussion string `json:"discussion" jsonschema:"discussion id"`
-	Issue      string `json:"issue" jsonschema:"issue id"`
-	Position   string `json:"position" jsonschema:"accepted position id"`
-	Basis      string `json:"basis,omitempty" jsonschema:"why"`
-	ReviewBy   int64  `json:"review_by,omitempty" jsonschema:"unix seconds; re-examination horizon check will enforce"`
-	Author     string `json:"author,omitempty"`
-	Role       string `json:"role,omitempty"`
+	Discussion string   `json:"discussion" jsonschema:"discussion id"`
+	Issue      string   `json:"issue" jsonschema:"issue id"`
+	Position   string   `json:"position,omitempty" jsonschema:"accepted position id for a position decision"`
+	Basis      string   `json:"basis,omitempty" jsonschema:"why"`
+	Map        bool     `json:"map,omitempty" jsonschema:"close as an audience map; omit position and supply review_by"`
+	Ack        []string `json:"ack,omitempty" jsonschema:"warning keys acknowledged on this decision; basis supplies the rationale"`
+	ReviewBy   int64    `json:"review_by,omitempty" jsonschema:"unix seconds; re-examination horizon check will enforce"`
+	Author     string   `json:"author,omitempty"`
+	Role       string   `json:"role,omitempty"`
 }
 
 func (x *srv) decide(ctx context.Context, req *mcp.CallToolRequest, a decideArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if err := x.mover(a.Author, a.Role).Decide(a.Discussion, a.Issue, a.Position, a.Basis, a.ReviewBy); err != nil {
+	if a.Map {
+		if a.Position != "" {
+			return bad(&ibis.IllegalMove{Node: a.Issue, Detail: "omit position for a map decision"})
+		}
+		if err := x.mover(a.Author, a.Role).DecideMap(a.Discussion, a.Issue, a.Basis, a.ReviewBy, a.Ack...); err != nil {
+			return bad(err)
+		}
+		return ok(map[string]string{"issue": a.Issue, "kind": ibis.MapDecision})
+	}
+	if a.Position == "" {
+		return bad(&ibis.IllegalMove{Node: a.Issue, Detail: "a position decision requires a position"})
+	}
+	if err := x.mover(a.Author, a.Role).Decide(a.Discussion, a.Issue, a.Position, a.Basis, a.ReviewBy, a.Ack...); err != nil {
 		return bad(err)
 	}
 	return ok(map[string]string{"issue": a.Issue, "position": a.Position})
 }
 
 type supersedeArgs struct {
-	Discussion string `json:"discussion" jsonschema:"discussion id"`
-	Issue      string `json:"issue" jsonschema:"issue id"`
-	Position   string `json:"position" jsonschema:"newly accepted position id"`
-	Basis      string `json:"basis" jsonschema:"why the prior decision is overturned (required)"`
-	ReviewBy   int64  `json:"review_by,omitempty" jsonschema:"unix seconds; re-examination horizon check will enforce"`
-	Author     string `json:"author,omitempty"`
-	Role       string `json:"role,omitempty"`
+	Discussion string   `json:"discussion" jsonschema:"discussion id"`
+	Issue      string   `json:"issue" jsonschema:"issue id"`
+	Position   string   `json:"position,omitempty" jsonschema:"newly accepted position id for a position decision"`
+	Basis      string   `json:"basis" jsonschema:"why the prior decision is overturned (required)"`
+	Map        bool     `json:"map,omitempty" jsonschema:"close as an audience map; omit position and supply review_by"`
+	Ack        []string `json:"ack,omitempty" jsonschema:"warning keys acknowledged on this decision; basis supplies the rationale"`
+	ReviewBy   int64    `json:"review_by,omitempty" jsonschema:"unix seconds; re-examination horizon check will enforce"`
+	Author     string   `json:"author,omitempty"`
+	Role       string   `json:"role,omitempty"`
 }
 
 func (x *srv) supersede(ctx context.Context, req *mcp.CallToolRequest, a supersedeArgs) (*mcp.CallToolResult, any, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	if err := x.mover(a.Author, a.Role).Supersede(a.Discussion, a.Issue, a.Position, a.Basis, a.ReviewBy); err != nil {
+	if a.Map {
+		if a.Position != "" {
+			return bad(&ibis.IllegalMove{Node: a.Issue, Detail: "omit position for a map decision"})
+		}
+		if err := x.mover(a.Author, a.Role).SupersedeMap(a.Discussion, a.Issue, a.Basis, a.ReviewBy, a.Ack...); err != nil {
+			return bad(err)
+		}
+		return ok(map[string]string{"issue": a.Issue, "kind": ibis.MapDecision})
+	}
+	if a.Position == "" {
+		return bad(&ibis.IllegalMove{Node: a.Issue, Detail: "a position decision requires a position"})
+	}
+	if err := x.mover(a.Author, a.Role).Supersede(a.Discussion, a.Issue, a.Position, a.Basis, a.ReviewBy, a.Ack...); err != nil {
 		return bad(err)
 	}
 	return ok(map[string]string{"issue": a.Issue, "position": a.Position})

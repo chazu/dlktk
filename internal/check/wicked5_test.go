@@ -1,8 +1,9 @@
-package check
+package check_test
 
 import (
 	"testing"
 
+	"github.com/chazu/dlktk/internal/check"
 	"github.com/chazu/dlktk/internal/proto"
 	"github.com/chazu/dlktk/internal/store"
 )
@@ -40,7 +41,7 @@ func TestSingleAuthorConvergenceDeciderSharesAuthor(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, SingleAuthorConvergence) != 1 {
+	if findKind(v, check.SingleAuthorConvergence) != 1 {
 		t.Fatalf("want single_author_convergence when the synthesis author decides: %+v", v)
 	}
 }
@@ -54,7 +55,7 @@ func TestSingleAuthorConvergenceCleanSeparation(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, SingleAuthorConvergence) != 0 {
+	if findKind(v, check.SingleAuthorConvergence) != 0 {
 		t.Fatalf("distinct decider + cross-author objection must not fire: %+v", v)
 	}
 }
@@ -68,7 +69,7 @@ func TestSingleAuthorConvergenceSelfObjectionsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, SingleAuthorConvergence) != 1 {
+	if findKind(v, check.SingleAuthorConvergence) != 1 {
 		t.Fatalf("want single_author_convergence when every objector is the synthesis author: %+v", v)
 	}
 }

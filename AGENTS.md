@@ -275,15 +275,12 @@ exploration reads.
   its own author (`single_author_convergence` — the decider shares its author,
   or every objector does), a preference recorded before its issue had two
   positions from two authors (`premature_preference`), and an issue decided
-  over another live warning its basis never acknowledged
+  over another live warning the decider never acknowledged
   (`unacknowledged_warning`). The non-fatal note `mapped_pending_governance`
   reminds you to raise a mapped issue's governance question; it never fails a
   check.
-- **A warning is a work item, not noise.** A move-result warning or a strict
-  finding on an issue obligates the loop: resolve it before the next convergent
-  move (`prefer`/`decide`/`supersede` on that issue), or record the override
-  rationale in that move's `--basis` — name the warning or say why you proceed.
-  Deciding over a warning your basis never mentions draws
-  `unacknowledged_warning`. This is the precedent the first exercise set and
-  arc two exists to break: `untested_decision` fired and the session closed
-  over it, unremarked.
+- Resolve a warning before closing the decision, or record it with
+  `--ack <kind>` and explain the rationale with `--basis`. For a warning
+  on another node, use `--ack <kind>:<node>`. Repeat the flag for each
+  finding. Each decision records its own warnings at closure. Later warnings
+  still appear in `check`. Earlier decisions retain their original basis.

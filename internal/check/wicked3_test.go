@@ -1,4 +1,4 @@
-package check
+package check_test
 
 // Arc two, items 3-4 (wicked-problems-2.md): self_elevated_synthesis and
 // bundle_synthesis strict findings, with the item-3 suppression rule.
@@ -6,6 +6,7 @@ package check
 import (
 	"testing"
 
+	"github.com/chazu/dlktk/internal/check"
 	"github.com/chazu/dlktk/internal/proto"
 )
 
@@ -25,7 +26,7 @@ func TestSelfElevatedSynthesisFinding(t *testing.T) {
 	if _, _, err := m.Prefer("d", h, a, "subsumption"); err != nil {
 		t.Fatal(err)
 	}
-	if findKind(run(t, s), SelfElevatedSynthesis) != 1 {
+	if findKind(run(t, s), check.SelfElevatedSynthesis) != 1 {
 		t.Fatal("want self_elevated_synthesis: parent's objection is unanswered on the hybrid")
 	}
 
@@ -33,7 +34,7 @@ func TestSelfElevatedSynthesisFinding(t *testing.T) {
 	if _, err := bob.Support("d", h, "the hybrid escapes it", "", obj); err != nil {
 		t.Fatal(err)
 	}
-	if findKind(run(t, s), SelfElevatedSynthesis) != 0 {
+	if findKind(run(t, s), check.SelfElevatedSynthesis) != 0 {
 		t.Fatal("a cross-author address must clear self_elevated_synthesis")
 	}
 }
@@ -54,7 +55,7 @@ func TestSelfElevatedSynthesisResistsSelfAddress(t *testing.T) {
 	if _, _, err := m.Prefer("d", h, a, "subsumption"); err != nil {
 		t.Fatal(err)
 	}
-	if findKind(run(t, s), SelfElevatedSynthesis) != 1 {
+	if findKind(run(t, s), check.SelfElevatedSynthesis) != 1 {
 		t.Fatal("a self-authored address must not clear self_elevated_synthesis")
 	}
 }
@@ -83,10 +84,10 @@ func TestSelfElevatedSuppressedByUntested(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := run(t, s)
-	if findKind(v, UntestedDecision) != 1 {
+	if findKind(v, check.UntestedDecision) != 1 {
 		t.Fatalf("untested_decision must fire: %+v", v)
 	}
-	if findKind(v, SelfElevatedSynthesis) != 0 {
+	if findKind(v, check.SelfElevatedSynthesis) != 0 {
 		t.Fatalf("self_elevated_synthesis must be suppressed on the untested node: %+v", v)
 	}
 }
@@ -94,7 +95,7 @@ func TestSelfElevatedSuppressedByUntested(t *testing.T) {
 // A decided synthesis of three or more parents with no recorded drops draws
 // bundle_synthesis; recording drops clears it; two parents never trigger it.
 func TestBundleSynthesisFinding(t *testing.T) {
-	build := func(t *testing.T, parents int, drops []string) View {
+	build := func(t *testing.T, parents int, drops []string) check.View {
 		s, m := open(t)
 		issue, _ := m.Raise("d", "q?", "", "", "")
 		var froms []string
@@ -118,13 +119,13 @@ func TestBundleSynthesisFinding(t *testing.T) {
 		return run(t, s)
 	}
 
-	if findKind(build(t, 3, nil), BundleSynthesis) != 1 {
+	if findKind(build(t, 3, nil), check.BundleSynthesis) != 1 {
 		t.Fatal("3 parents, no drops, decided -> want bundle_synthesis")
 	}
-	if findKind(build(t, 3, []string{"drops the second half"}), BundleSynthesis) != 0 {
+	if findKind(build(t, 3, []string{"drops the second half"}), check.BundleSynthesis) != 0 {
 		t.Fatal("recorded drops must clear bundle_synthesis")
 	}
-	if findKind(build(t, 2, nil), BundleSynthesis) != 0 {
+	if findKind(build(t, 2, nil), check.BundleSynthesis) != 0 {
 		t.Fatal("two-parent syntheses must stay friction-free")
 	}
 }
@@ -140,7 +141,7 @@ func TestBundleSynthesisOnlyWhenDecided(t *testing.T) {
 	if _, _, err := m.Synthesize("d", issue, "hybrid", []string{a, b, c}, "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if findKind(run(t, s), BundleSynthesis) != 0 {
+	if findKind(run(t, s), check.BundleSynthesis) != 0 {
 		t.Fatal("an undecided bundle must not fire bundle_synthesis")
 	}
 }
