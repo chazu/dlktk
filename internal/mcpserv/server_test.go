@@ -117,3 +117,38 @@ func TestNotFoundEnvelope(t *testing.T) {
 		t.Fatalf("want not_found envelope, got isErr=%v %v", isErr, v)
 	}
 }
+
+func TestShowOpenAdoptions(t *testing.T) {
+	call := harness(t)
+	v, _ := call("new", map[string]any{"title": "practices"})
+	disc := v["id"]
+	v, _ = call("raise", map[string]any{"discussion": disc, "text": "which practices?", "cardinality": "open"})
+	issue := v["id"]
+	want := map[string]string{}
+	for _, basis := range []string{"owner coverage", "contract drift"} {
+		v, _ = call("propose", map[string]any{"discussion": disc, "issue": issue, "text": basis})
+		pos := v["id"].(string)
+		want[pos] = basis
+		if _, failed := call("decide", map[string]any{"discussion": disc, "issue": issue, "position": pos, "basis": basis}); failed {
+			t.Fatal("decide failed")
+		}
+		if basis == "owner coverage" {
+			want[pos] = "coverage confirmed"
+			if _, failed := call("supersede", map[string]any{"discussion": disc, "issue": issue, "position": pos, "basis": want[pos]}); failed {
+				t.Fatal("supersede failed")
+			}
+		}
+	}
+	v, _ = call("show", map[string]any{"discussion": disc, "node": issue})
+	for _, row := range v["decisions"].([]any) {
+		d := row.(map[string]any)
+		p := d["position"].(string)
+		if want[p] != d["basis"] {
+			t.Fatalf("unexpected adoption %v", d)
+		}
+		delete(want, p)
+	}
+	if len(want) > 0 {
+		t.Fatalf("missing adoptions %v", want)
+	}
+}

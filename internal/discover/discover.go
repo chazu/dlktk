@@ -83,7 +83,7 @@ import (
 // drift / stalemate / store-invariant verification, exit 5); 0.4.0 the
 // supersede move (bare re-decide rejected, design §16 Q4) and
 // decided.supersedes.
-const Version = "0.17.1"
+const Version = "0.18.0"
 
 // Move describes a state-mutating command.
 type Move struct {
@@ -202,7 +202,7 @@ func Current() Schema {
 			"WhyView":           "{node, text, label, because: [{attacker, attacker_text, attacker_label, reason}], inherited_questions?: [InheritedQuestion], to_flip: [{move, args: [string], effect}]}",
 			"InheritedQuestion": "{objection, objection_text, author?, parent, parent_text, addressed_by?: [id], open: bool} — a synthesis parent's undefeated objection; discharge with object/support --answers",
 			"MoveResult":        "{id, warnings?: [string]} — synthesize and prefer may carry advisory warnings; the move stands",
-			"NodeView":          "{id, kind, text, author?, tag?, promotes?, label?, drops?: [string], inherited_questions?: [InheritedQuestion], links: [{rel, dir: in|out, peer, peer_kind, peer_text, peer_label?}], decided?: {position, basis, decider, override, supersedes?, review_by?}}",
+			"NodeView":          "{id, kind, text, author?, tag?, promotes?, label?, drops?: [string], inherited_questions?: [InheritedQuestion], links: [{rel, dir: in|out, peer, peer_kind, peer_text, peer_label?}], decisions?: [DecidedView] (standing adoptions on open issues), decided?: {position, basis, decider, override, supersedes?, review_by?}}",
 			"SearchView":        "{query, hits: [{discussion, id, kind, text, label?}]}",
 			"ExplainView":       "{issue, issue_text, cardinality, attacks: [{from, to, source, defeats, basis?, audience_blocked?}], preferences: [{winner, loser, basis?, derived}], steps: [{round, node, label, why, by: [id]}], outcome: [{id, text, label}], decided?: {position, basis, decider, override, supersedes?, review_by?}, decision_is_in: bool}",
 			"WhatIfView":        "{issue, hypotheticals: [{kind: object|prefer|without, target?, winner?, loser?, node?, summary}], flipped: [{node, text, from, to}], result: IssueStatus}",

@@ -135,18 +135,7 @@ func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue s
 	// standing position decision; Decided points at the sole one for select_one,
 	// so existing single-decision consumers are unchanged. A map decision closes
 	// the issue without a single winner and lands in MapDecided.
-	for _, d := range decs {
-		if d.Issue != issue {
-			continue
-		}
-		dv := DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy, Kind: d.Kind, SupersededKind: d.SupersededKind}
-		if d.Kind == ibis.MapDecision {
-			m := dv
-			st.MapDecided = &m
-			continue
-		}
-		st.Decisions = append(st.Decisions, dv)
-	}
+	st.Decisions, st.MapDecided = issueDecisions(issue, decs)
 	if card != string(ibis.Open) && len(st.Decisions) > 0 {
 		st.Decided = &st.Decisions[len(st.Decisions)-1]
 	}
@@ -154,6 +143,23 @@ func Status(g *ibis.Graph, fw *af.Framework, labels map[string]af.Label, issue s
 	st.Stalemate = isStalemate(st) && st.MapDecided == nil
 	st.Advice = advise(st)
 	return st
+}
+
+func issueDecisions(issue string, decs []ibis.Decision) (positions []DecidedView, mapped *DecidedView) {
+	for _, d := range decs {
+		if d.Issue != issue {
+			continue
+		}
+		dv := DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy, Kind: d.Kind, SupersededKind: d.SupersededKind}
+		if d.Kind == ibis.MapDecision {
+			m := dv
+			mapped = &m
+			continue
+		}
+		positions = append(positions, dv)
+	}
+	sort.Slice(positions, func(i, j int) bool { return positions[i].Position < positions[j].Position })
+	return positions, mapped
 }
 
 // isStalemate reports a mutual-attack stalemate: every position is UNDEC and none

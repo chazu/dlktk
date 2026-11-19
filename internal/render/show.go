@@ -33,6 +33,7 @@ type NodeView struct {
 	Label              string              `json:"label,omitempty"`    // AF nodes only
 	Drops              []string            `json:"drops,omitempty"`    // syntheses: what the hybrid excludes
 	InheritedQuestions []InheritedQuestion `json:"inherited_questions,omitempty"`
+	Decisions          []DecidedView       `json:"decisions,omitempty"`
 	Links              []LinkView          `json:"links"`
 	Decided            *DecidedView        `json:"decided,omitempty"` // issues with a standing decision
 }
@@ -76,10 +77,14 @@ func Show(g *ibis.Graph, labels map[string]af.Label, node string, decs []ibis.De
 		return a.Peer < b.Peer
 	})
 	if n.Kind == ibis.Issue {
-		for _, d := range decs {
-			if d.Issue == node {
-				v.Decided = &DecidedView{Position: d.Position, Basis: d.Basis, Decider: d.Decider, Override: d.Override, Supersedes: d.Supersedes, ReviewBy: d.ReviewBy, Kind: d.Kind, SupersededKind: d.SupersededKind}
-			}
+		positions, mapped := issueDecisions(node, decs)
+		switch {
+		case g.IssueCards[node] == ibis.Open:
+			v.Decisions = positions
+		case mapped != nil:
+			v.Decided = mapped
+		case len(positions) > 0:
+			v.Decided = &positions[0]
 		}
 	}
 	return v
@@ -130,6 +135,9 @@ func ShowText(v NodeView) string {
 		}
 		prefix := fmt.Sprintf("  %s %s %s%s  ", arrow, cDim(fmt.Sprintf("%-11s", l.Rel)), peerLabel, nid(l.PeerKind, l.Peer))
 		b.WriteString(para(prefix, quote(l.PeerText)) + "\n")
+	}
+	for _, d := range v.Decisions {
+		fmt.Fprintf(&b, "  %s %s  %s  %s\n", labelColor("IN", "adopted:"), pid(d.Position), cDim("by "+d.Decider), d.Basis)
 	}
 	if d := v.Decided; d != nil {
 		flag := ""
