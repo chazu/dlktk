@@ -1,0 +1,260 @@
+{
+  "examples/make-prorgamming-fun-again/dialectic-0.10.0.ndjson": {
+    "decisions": [
+      [
+        "nozip-bifah",
+        "nozok-hujig"
+      ],
+      [
+        "rudob-davin",
+        "futip-zujop"
+      ],
+      [
+        "sulug-butuk",
+        "votov-mamug"
+      ]
+    ],
+    "findings": [
+      [
+        "bundle_synthesis",
+        "sulug-butuk",
+        "votov-mamug"
+      ],
+      [
+        "review_due",
+        "rudob-davin",
+        "futip-zujop"
+      ],
+      [
+        "review_due",
+        "sulug-butuk",
+        "votov-mamug"
+      ],
+      [
+        "unacknowledged_warning",
+        "nozip-bifah",
+        ""
+      ],
+      [
+        "unacknowledged_warning",
+        "rudob-davin",
+        ""
+      ],
+      [
+        "unacknowledged_warning",
+        "sulug-butuk",
+        ""
+      ],
+      [
+        "untested_decision",
+        "nozip-bifah",
+        "nozok-hujig"
+      ],
+      [
+        "untested_decision",
+        "sulug-butuk",
+        "votov-mamug"
+      ]
+    ]
+  },
+  "examples/make-prorgamming-fun-again/dialectic-0.11.0.ndjson": {
+    "decisions": [
+      [
+        "mizaf-mipif",
+        "pikig-dapok"
+      ],
+      [
+        "sijol-pizup",
+        "zuluh-tuduf"
+      ],
+      [
+        "vufuf-kotar",
+        "dadur-pilun"
+      ]
+    ],
+    "findings": [
+      [
+        "bundle_synthesis",
+        "mizaf-mipif",
+        "pikig-dapok"
+      ],
+      [
+        "review_due",
+        "mizaf-mipif",
+        "pikig-dapok"
+      ],
+      [
+        "review_due",
+        "sijol-pizup",
+        "zuluh-tuduf"
+      ],
+      [
+        "review_due",
+        "vufuf-kotar",
+        "dadur-pilun"
+      ],
+      [
+        "single_author_convergence",
+        "sijol-pizup",
+        "zuluh-tuduf"
+      ],
+      [
+        "unacknowledged_warning",
+        "mizaf-mipif",
+        ""
+      ],
+      [
+        "unacknowledged_warning",
+        "sijol-pizup",
+        ""
+      ],
+      [
+        "unacknowledged_warning",
+        "vufuf-kotar",
+        ""
+      ]
+    ]
+  },
+  "examples/make-prorgamming-fun-again/dialectic.ndjson": {
+    "decisions": [
+      [
+        "fivol-mipin",
+        "fivup-kupur"
+      ],
+      [
+        "fivol-mipin",
+        "fizap-rotal"
+      ],
+      [
+        "fivol-mipin",
+        "fizol-sifib"
+      ],
+      [
+        "fivol-mipin",
+        "fizuj-zilug"
+      ],
+      [
+        "fofaf-mugij",
+        "fogan-bukul"
+      ],
+      [
+        "fojas-pipit",
+        "map"
+      ],
+      [
+        "fokos-tifir",
+        "fokus-talut"
+      ]
+    ],
+    "findings": [
+      [
+        "review_due",
+        "fivol-mipin",
+        "fivup-kupur"
+      ],
+      [
+        "review_due",
+        "fivol-mipin",
+        "fizap-rotal"
+      ],
+      [
+        "review_due",
+        "fivol-mipin",
+        "fizol-sifib"
+      ],
+      [
+        "review_due",
+        "fivol-mipin",
+        "fizuj-zilug"
+      ],
+      [
+        "review_due",
+        "fofaf-mugij",
+        "fogan-bukul"
+      ],
+      [
+        "review_due",
+        "fojas-pipit",
+        ""
+      ],
+      [
+        "review_due",
+        "fokos-tifir",
+        "fokus-talut"
+      ],
+      [
+        "unacknowledged_warning",
+        "fofaf-mugij",
+        ""
+      ],
+      [
+        "unacknowledged_warning",
+        "fojas-pipit",
+        ""
+      ]
+    ]
+  },
+  "examples/q1-pudl-dependency.ndjson": {
+    "decisions": [
+      [
+        "lumuv-javop",
+        "nafop-rogol"
+      ]
+    ],
+    "findings": []
+  },
+  "examples/q2-preference-transitivity.ndjson": {
+    "decisions": [
+      [
+        "fifim-suguj",
+        "fifop-puron"
+      ]
+    ],
+    "findings": []
+  },
+  "examples/q3-stalemate-reporting.ndjson": {
+    "decisions": [
+      [
+        "gupoh-pafot",
+        "jakib-johuz"
+      ]
+    ],
+    "findings": []
+  },
+  "examples/q4-decision-supersession.ndjson": {
+    "decisions": [
+      [
+        "hizom-pilil",
+        "hizur-nokar"
+      ]
+    ],
+    "findings": []
+  },
+  "examples/q5-cross-discussion-reference.ndjson": {
+    "decisions": [
+      [
+        "duzak-saboh",
+        "gavan-husim"
+      ]
+    ],
+    "findings": []
+  },
+  "examples/q7-cardinality-setting.ndjson": {
+    "decisions": [
+      [
+        "sohif-kamil",
+        "sohis-lutis"
+      ]
+    ],
+    "findings": []
+  },
+  "examples/q8-roster-binding-policy.ndjson": {
+    "decisions": [
+      [
+        "hizit-gipam",
+        "hizuf-vitaj"
+      ]
+    ],
+    "findings": []
+  }
+}

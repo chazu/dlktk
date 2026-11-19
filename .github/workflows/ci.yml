@@ -28,10 +28,6 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go build -o dlktk ./cmd/dlktk
-      - run: |
-          for f in examples/*.ndjson; do
-            ./dlktk import "$f" --store /tmp/dialectics
-          done
-          ./dlktk check --all --strict --store /tmp/dialectics
+      - run: python3 .github/scripts/check_examples.py ./dlktk
       # The reference deliberation harness must run end to end (AGENTS.md).
       - run: DLKTK=$PWD/dlktk ./examples/deliberate.sh
