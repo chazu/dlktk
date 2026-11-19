@@ -1,0 +1,9 @@
+{
+  "ownership-3": "The reviewer's comprehension of the design needs to be verified somehow.",
+  "gate-2": "Addresses the objection if criticality is broadly defined. If critical means only frequently changed, the problem persists. The parent refers to load-bearing modules.",
+  "contract-3": "depends on what 'contracts' means - at a certain level, invariants specified by humans can be useful - these could manifest as different types of validation - from unit tests to acceptance tests to e2e tests, or simply as stated principles, or as static linting rules. as written though, we can't say.",
+  "contract-4": "it addresses the problem but it may be too heavy and take too much time.",
+  "volume-1": "the reply doesn't address the objection at all, it reinforces it",
+  "volume-2": "the introduction of a cap on reviews does potentially limit throughput. its not a complete showstopper but its a weakness.",
+  "practice-1": "not currently feasible in a real software shop"
+}

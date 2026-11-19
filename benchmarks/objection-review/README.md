@@ -8,7 +8,7 @@ The source discussion is `fivij-zatad` in `examples/make-prorgamming-fun-again/d
 
 The four ownership cases are development cases. The sixteen held-out cases cover gate throughput, contract drift, review volume, and practice time. All variants of each claim family stay in one split. All cases share a discussion domain. A future adoption trial needs other discussions.
 
-Review the parent, objection, hybrid, and reply in each case. Record changes by case ID before interpreting model scores. The initial labels are author proposals. The runner sends only the four text fields. Human review is pending.
+Review the parent, objection, hybrid, and reply in each case. Record changes by case ID before interpreting model scores. The initial labels are author proposals. The runner sends only the four text fields. The maintainer reviewed all 20 cases. See `reviewed.json` for labels and `review-notes.json` for case-specific judgments.
 
 ## Protocol fixed before inference
 
@@ -25,28 +25,26 @@ Use Python 3.10 or later. Set `DECIDER_URL` to the System One service base URL a
 ```sh
 python3 run.py decider decider.jsonl
 python3 run.py jev jev.jsonl
-python3 score.py decider.jsonl jev.jsonl
+python3 score.py --labels reviewed.json decider.jsonl jev.jsonl
 ```
 
-## November 19 pilot results
+## November 19 reviewed results
 
-Both providers answered all 40 requests. These results use the provisional labels. The primary pass covers 16 held-out replies, including 11 labeled inadequate or unclear.
+Both models returned all 40 predictions each. Rescoring used the maintainer's labels and the original predictions. The primary pass has 16 held-out cases. The reviewer judged 12 replies inadequate or unclear.
 
 | Measure | Answer-link baseline | Decider 2B | Jev 1.14 |
 |---|---:|---:|---:|
-| Correct three-way assessment | 5/16 | 11/16 | 12/16 |
-| Weak replies marked addressed | 11/11 | 1/11 | 0/11 |
-| Weak replies among first ten inspected | 5/10 | 8/10 | 9/10 |
+| Correct three-way assessment | 4/16 | 7/16 | 10/16 |
+| Inadequate or unclear replies marked addressed | 12/12 | 2/12 | 1/12 |
+| Inadequate or unclear replies among first ten inspected | 7/10 | 9/10 | 9/10 |
 | Choices changed after reversing option order | n/a | 4/16 | 1/16 |
 | Median request time across both passes | n/a | 177 ms | 218 ms |
 
-The baseline comparison interprets every answer link as reassurance. Its ranking depends entirely on corpus order. Eleven of sixteen replies are weak under the draft labels, so random inspection would find 6.875 weak replies per ten on average.
+The structural baseline treats every answer link as reassurance and inspects in seeded corpus order. Uniform random inspection would find 7.5 weak replies per ten on average. Jev reported USD 0.000789 for its 40 requests. Decider reported token counts without a monetary cost.
 
-Decider marked the participation leaderboard in practice-4 as an answer even though managers could still cancel every session. Its choice changed when the options reversed. Jev's only order flip was practice-3, between a persisting problem and insufficient information. Both models rejected volume-2. A human reviewer should consider whether capping the review queue solves the objection or moves the backlog upstream.
+Defer integration of the objection reviewer. Both providers missed the predeclared requirement of zero false reassurances. Decider also exceeded the limit of one order flip. Both improved the inspection order in this sample. All held-out replies were constructed from a single discussion.
 
-Jev met the numerical criteria for a larger trial on the draft labels. Decider missed the false-reassurance and order-stability criteria. Jev reported a total cost of USD 0.000789 for 40 requests. Decider returned token counts without a monetary cost.
-
-Defer integration. All held-out replies are constructed, all cases share one discussion, and a human still needs to review the labels. Preserve these predictions for rescoring. To provide independent labels, examine the state fields before reading the predictions. Supply a JSON object mapping each case ID to a label with `score.py --labels reviewed.json decider.jsonl jev.jsonl`.
+The human review changed six provisional labels. On practice-1, both models accepted a protected half-day with a specific scheduling tradeoff. The reviewer judged that commitment infeasible in a real software shop. On contract-4, the reviewer accepted the required owner check while questioning its cost. These cases show why one label can be hard to assign. A future evaluation could ask separately whether a reply answers the stated objection and what evidence supports its feasibility. Keep the current labels as reviewed.
 
 ## Review in a browser
 

@@ -1,0 +1,22 @@
+{
+  "ownership-1": "addresses",
+  "ownership-2": "persists",
+  "ownership-3": "persists",
+  "ownership-4": "unclear",
+  "gate-1": "addresses",
+  "gate-2": "addresses",
+  "gate-3": "persists",
+  "gate-4": "persists",
+  "contract-1": "addresses",
+  "contract-2": "persists",
+  "contract-3": "unclear",
+  "contract-4": "addresses",
+  "volume-1": "persists",
+  "volume-2": "persists",
+  "volume-3": "unclear",
+  "volume-4": "unclear",
+  "practice-1": "persists",
+  "practice-2": "persists",
+  "practice-3": "persists",
+  "practice-4": "persists"
+}
