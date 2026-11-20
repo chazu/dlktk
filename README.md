@@ -112,6 +112,8 @@ To review benchmark replies locally, run `python3 benchmarks/objection-review/re
 
 The duplicate-search trial qualified Jev for opt-in retrieval. The objection reviewer and automatic framing prompt were deferred after evaluation. The search and framing report includes the test cases, limits, and reproduction commands. [Search and framing results](benchmarks/search-framing/README.md)
 
+The witness pilot compares one agent with and without dlktk on ten published testimony puzzles. The paired results include final verdicts, captured attack graphs, and disagreement diagnoses. [Witness pilot](benchmarks/witness/README.md)
+
 ## Build
 
 dlktk pins a `github.com/chazu/pudl` revision in `go.mod`, so a plain clone builds reproducibly with no sibling checkout:

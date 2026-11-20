@@ -40,7 +40,20 @@ def score(cases, rows):
             edges = sorted([a["attacker"], a["target"]] for a in submission["attacks"])
             exact = submission["root"] == c["root"] and edges == c["edges"]
         details.append(dict(id=c["id"], gold=c["answer"], **answers, pair=category, exact_graph=exact))
-    return dict(correct_by_gold=counts, pairs=pairs, cases=details)
+    resources = {}
+    for arm in counts:
+        runs = [r for r in rows if r["arm"] == arm]
+        calls = [call for r in runs for call in r["calls"]]
+        costs = [call["usage"].get("cost") for call in calls]
+        resources[arm] = {
+            "models": sorted({call["model"] for call in calls}),
+            "calls": len(calls),
+            "prompt_tokens": sum(call["usage"]["prompt_tokens"] for call in calls),
+            "output_tokens": sum(call["usage"]["completion_tokens"] for call in calls),
+            "cost_usd": round(sum(costs), 7) if all(c is not None for c in costs) else None,
+            "session_seconds": sum(r["ms"] for r in runs) / 1000,
+        }
+    return dict(correct_by_gold=counts, pairs=pairs, resources=resources, cases=details)
 
 
 if __name__ == "__main__":
