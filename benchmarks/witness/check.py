@@ -3,13 +3,13 @@ import argparse
 import json
 from pathlib import Path
 
-from corpus import HERE, load_cases
+from corpus import SUITES, load_cases
 from run import BUDGET, graph, session
 from score import score
 
 
-def check(binary, csv_path):
-    cases = load_cases(csv_path)
+def check(binary, csv_path, suite):
+    cases = load_cases(csv_path, suite)
     for case in cases:
         args = {"root": case["root"], "attacks": [{"attacker": a, "target": b} for a, b in reversed(case["edges"])]}
         result, nodes = graph(binary, args)
@@ -50,12 +50,13 @@ def check(binary, csv_path):
     args["attacks"] = [{"attacker":"A","target":"B"},{"attacker":"B","target":"A"}]
     bad = session(case["prompt"], "dlktk", binary, reply)
     assert bad["error"]["stage"] == "tool" and bad["answer"] is None
-    print("Ten oracle graphs, both session paths, budget, invalid capture, and duplicate scoring passed.")
+    print(f"{len(cases)} oracle graphs, both session paths, budget, invalid capture, and duplicate scoring passed.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--csv")
+    parser.add_argument("--suite", choices=SUITES, default="pilot")
     args = parser.parse_args()
-    check(args.binary.resolve(strict=True), args.csv)
+    check(args.binary.resolve(strict=True), args.csv, args.suite)

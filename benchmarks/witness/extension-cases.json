@@ -1,0 +1,904 @@
+[
+  {
+    "id": "0_2",
+    "shape": [
+      2
+    ],
+    "answer": "yes",
+    "root": "Kaydence",
+    "edges": [
+      [
+        "Ashby",
+        "Zadie"
+      ],
+      [
+        "Zadie",
+        "Kaydence"
+      ]
+    ]
+  },
+  {
+    "id": "0_1",
+    "shape": [
+      1
+    ],
+    "answer": "no",
+    "root": "Yara",
+    "edges": [
+      [
+        "Dylan",
+        "Yara"
+      ]
+    ]
+  },
+  {
+    "id": "0_1_4",
+    "shape": [
+      1,
+      4
+    ],
+    "answer": "no",
+    "root": "Rylan",
+    "edges": [
+      [
+        "Arden",
+        "Rylan"
+      ],
+      [
+        "Naomi",
+        "Zane"
+      ],
+      [
+        "Norah",
+        "Rylan"
+      ],
+      [
+        "Salvador",
+        "Naomi"
+      ],
+      [
+        "Zane",
+        "Norah"
+      ]
+    ]
+  },
+  {
+    "id": "0_2_4",
+    "shape": [
+      2,
+      4
+    ],
+    "answer": "yes",
+    "root": "Ruby",
+    "edges": [
+      [
+        "Abigail",
+        "Maelynn"
+      ],
+      [
+        "Jovie",
+        "Ruby"
+      ],
+      [
+        "Maelynn",
+        "Ruby"
+      ],
+      [
+        "Mason",
+        "Skylar"
+      ],
+      [
+        "Rhea",
+        "Jovie"
+      ],
+      [
+        "Skylar",
+        "Abigail"
+      ]
+    ]
+  },
+  {
+    "id": "0_5",
+    "shape": [
+      5
+    ],
+    "answer": "no",
+    "root": "Journey",
+    "edges": [
+      [
+        "Ashby",
+        "Journey"
+      ],
+      [
+        "Beckham",
+        "Maxton"
+      ],
+      [
+        "Brinley",
+        "Beckham"
+      ],
+      [
+        "Maxton",
+        "Owen"
+      ],
+      [
+        "Owen",
+        "Ashby"
+      ]
+    ]
+  },
+  {
+    "id": "0_6",
+    "shape": [
+      6
+    ],
+    "answer": "yes",
+    "root": "Jolene",
+    "edges": [
+      [
+        "John",
+        "Jolene"
+      ],
+      [
+        "Josephine",
+        "John"
+      ],
+      [
+        "Kiera",
+        "Mateo"
+      ],
+      [
+        "Mateo",
+        "Josephine"
+      ],
+      [
+        "Thomas",
+        "Kiera"
+      ],
+      [
+        "Wren",
+        "Thomas"
+      ]
+    ]
+  },
+  {
+    "id": "0_4_4",
+    "shape": [
+      4,
+      4
+    ],
+    "answer": "yes",
+    "root": "Melody",
+    "edges": [
+      [
+        "Asher",
+        "Carter"
+      ],
+      [
+        "Azalea",
+        "Skye"
+      ],
+      [
+        "Carter",
+        "Lainey"
+      ],
+      [
+        "Cassie",
+        "Melody"
+      ],
+      [
+        "Juliet",
+        "Melody"
+      ],
+      [
+        "Lainey",
+        "Juliet"
+      ],
+      [
+        "Rhiannon",
+        "Azalea"
+      ],
+      [
+        "Skye",
+        "Cassie"
+      ]
+    ]
+  },
+  {
+    "id": "0_3_4",
+    "shape": [
+      3,
+      4
+    ],
+    "answer": "no",
+    "root": "Tilly",
+    "edges": [
+      [
+        "Amayah",
+        "Tilly"
+      ],
+      [
+        "Camryn",
+        "Amayah"
+      ],
+      [
+        "Easton",
+        "Jessamy"
+      ],
+      [
+        "Eliana",
+        "Camryn"
+      ],
+      [
+        "Jessamy",
+        "Tilly"
+      ],
+      [
+        "Kyra",
+        "Easton"
+      ],
+      [
+        "Philomena",
+        "Kyra"
+      ]
+    ]
+  },
+  {
+    "id": "0_10",
+    "shape": [
+      10
+    ],
+    "answer": "yes",
+    "root": "Daisy",
+    "edges": [
+      [
+        "Andrew",
+        "Sylvie"
+      ],
+      [
+        "Aracely",
+        "Rowan"
+      ],
+      [
+        "Easton",
+        "Mackayla"
+      ],
+      [
+        "Mackayla",
+        "Ruby"
+      ],
+      [
+        "Matthew",
+        "Rayna"
+      ],
+      [
+        "Naomi",
+        "Aracely"
+      ],
+      [
+        "Rayna",
+        "Andrew"
+      ],
+      [
+        "Rowan",
+        "Easton"
+      ],
+      [
+        "Ruby",
+        "Daisy"
+      ],
+      [
+        "Sylvie",
+        "Naomi"
+      ]
+    ]
+  },
+  {
+    "id": "0_7",
+    "shape": [
+      7
+    ],
+    "answer": "no",
+    "root": "James",
+    "edges": [
+      [
+        "Amayah",
+        "Leoni"
+      ],
+      [
+        "Aniyah",
+        "Talia"
+      ],
+      [
+        "Anthony",
+        "Aniyah"
+      ],
+      [
+        "Astrid",
+        "James"
+      ],
+      [
+        "Leoni",
+        "Anthony"
+      ],
+      [
+        "Parker",
+        "Amayah"
+      ],
+      [
+        "Talia",
+        "Astrid"
+      ]
+    ]
+  },
+  {
+    "id": "0_1_8",
+    "shape": [
+      1,
+      8
+    ],
+    "answer": "no",
+    "root": "Arabella",
+    "edges": [
+      [
+        "Elijah",
+        "Roman"
+      ],
+      [
+        "Ellie",
+        "Elijah"
+      ],
+      [
+        "Ember",
+        "Lizbeth"
+      ],
+      [
+        "Isabella",
+        "Arabella"
+      ],
+      [
+        "Lincoln",
+        "Arabella"
+      ],
+      [
+        "Livia",
+        "Ellie"
+      ],
+      [
+        "Lizbeth",
+        "Livia"
+      ],
+      [
+        "Roman",
+        "Isabella"
+      ],
+      [
+        "Sofia",
+        "Ember"
+      ]
+    ]
+  },
+  {
+    "id": "0_2_8",
+    "shape": [
+      2,
+      8
+    ],
+    "answer": "yes",
+    "root": "Mariah",
+    "edges": [
+      [
+        "Eli",
+        "Ember"
+      ],
+      [
+        "Ember",
+        "Owen"
+      ],
+      [
+        "Hudson",
+        "Leila"
+      ],
+      [
+        "Kinsley",
+        "Hudson"
+      ],
+      [
+        "Leila",
+        "Veda"
+      ],
+      [
+        "Maelynn",
+        "Sylvie"
+      ],
+      [
+        "Owen",
+        "Solara"
+      ],
+      [
+        "Solara",
+        "Kinsley"
+      ],
+      [
+        "Sylvie",
+        "Mariah"
+      ],
+      [
+        "Veda",
+        "Mariah"
+      ]
+    ]
+  },
+  {
+    "id": "0_11",
+    "shape": [
+      11
+    ],
+    "answer": "no",
+    "root": "Perla",
+    "edges": [
+      [
+        "Anna",
+        "Perla"
+      ],
+      [
+        "Arlo",
+        "Evan"
+      ],
+      [
+        "Evan",
+        "Hattie"
+      ],
+      [
+        "Hattie",
+        "Kinsley"
+      ],
+      [
+        "Jordan",
+        "Zuri"
+      ],
+      [
+        "Josie",
+        "Maren"
+      ],
+      [
+        "Kinsley",
+        "Jordan"
+      ],
+      [
+        "Madelyn",
+        "Arlo"
+      ],
+      [
+        "Maren",
+        "Madelyn"
+      ],
+      [
+        "Nora",
+        "Anna"
+      ],
+      [
+        "Zuri",
+        "Nora"
+      ]
+    ]
+  },
+  {
+    "id": "0_12",
+    "shape": [
+      12
+    ],
+    "answer": "yes",
+    "root": "Ellie",
+    "edges": [
+      [
+        "Avani",
+        "Kaydence"
+      ],
+      [
+        "Calista",
+        "Daisy"
+      ],
+      [
+        "Daisy",
+        "Tiana"
+      ],
+      [
+        "Kaydence",
+        "Linnea"
+      ],
+      [
+        "Kyra",
+        "Calista"
+      ],
+      [
+        "Laila",
+        "Ellie"
+      ],
+      [
+        "Lily",
+        "Summer"
+      ],
+      [
+        "Linnea",
+        "Quinn"
+      ],
+      [
+        "Quinn",
+        "Laila"
+      ],
+      [
+        "Raegan",
+        "Kyra"
+      ],
+      [
+        "Summer",
+        "Avani"
+      ],
+      [
+        "Tiana",
+        "Lily"
+      ]
+    ]
+  },
+  {
+    "id": "0_2_2_6",
+    "shape": [
+      2,
+      2,
+      6
+    ],
+    "answer": "yes",
+    "root": "Everett",
+    "edges": [
+      [
+        "Adley",
+        "Everett"
+      ],
+      [
+        "Amayah",
+        "Amity"
+      ],
+      [
+        "Amira",
+        "Adley"
+      ],
+      [
+        "Amity",
+        "Madison"
+      ],
+      [
+        "Elle",
+        "Everett"
+      ],
+      [
+        "Hunter",
+        "Amayah"
+      ],
+      [
+        "Kendra",
+        "Elle"
+      ],
+      [
+        "Madison",
+        "Norah"
+      ],
+      [
+        "Norah",
+        "Everett"
+      ],
+      [
+        "Tanner",
+        "Hunter"
+      ]
+    ]
+  },
+  {
+    "id": "0_2_2_5",
+    "shape": [
+      2,
+      2,
+      5
+    ],
+    "answer": "no",
+    "root": "Greer",
+    "edges": [
+      [
+        "Adira",
+        "Chloe"
+      ],
+      [
+        "Chloe",
+        "Gabriel"
+      ],
+      [
+        "Ember",
+        "Greer"
+      ],
+      [
+        "Gabriel",
+        "Josephine"
+      ],
+      [
+        "Hudson",
+        "Ember"
+      ],
+      [
+        "Josephine",
+        "Greer"
+      ],
+      [
+        "Peyton",
+        "Reagan"
+      ],
+      [
+        "Reagan",
+        "Greer"
+      ],
+      [
+        "Roman",
+        "Adira"
+      ]
+    ]
+  },
+  {
+    "id": "0_14",
+    "shape": [
+      14
+    ],
+    "answer": "yes",
+    "root": "Vale",
+    "edges": [
+      [
+        "Adley",
+        "Matthew"
+      ],
+      [
+        "Alistair",
+        "Teagan"
+      ],
+      [
+        "Bria",
+        "Eliana"
+      ],
+      [
+        "Carson",
+        "Joshua"
+      ],
+      [
+        "Eliana",
+        "Felicity"
+      ],
+      [
+        "Emmeline",
+        "Adley"
+      ],
+      [
+        "Felicity",
+        "Emmeline"
+      ],
+      [
+        "Gabriel",
+        "Vale"
+      ],
+      [
+        "Joshua",
+        "Gabriel"
+      ],
+      [
+        "Levi",
+        "Soraya"
+      ],
+      [
+        "Mary",
+        "Levi"
+      ],
+      [
+        "Matthew",
+        "Carson"
+      ],
+      [
+        "Soraya",
+        "Alistair"
+      ],
+      [
+        "Teagan",
+        "Bria"
+      ]
+    ]
+  },
+  {
+    "id": "0_13",
+    "shape": [
+      13
+    ],
+    "answer": "no",
+    "root": "Ramiro",
+    "edges": [
+      [
+        "Aidan",
+        "Alivia"
+      ],
+      [
+        "Alivia",
+        "Layna"
+      ],
+      [
+        "Amelia",
+        "Xavier"
+      ],
+      [
+        "Kyrah",
+        "Sebastian"
+      ],
+      [
+        "Layna",
+        "Ramiro"
+      ],
+      [
+        "Leonardo",
+        "Nora"
+      ],
+      [
+        "Micah",
+        "Savannah"
+      ],
+      [
+        "Nora",
+        "Micah"
+      ],
+      [
+        "Renata",
+        "Amelia"
+      ],
+      [
+        "Roman",
+        "Leonardo"
+      ],
+      [
+        "Savannah",
+        "Aidan"
+      ],
+      [
+        "Sebastian",
+        "Renata"
+      ],
+      [
+        "Xavier",
+        "Roman"
+      ]
+    ]
+  },
+  {
+    "id": "0_3_4_6",
+    "shape": [
+      3,
+      4,
+      6
+    ],
+    "answer": "no",
+    "root": "Winslow",
+    "edges": [
+      [
+        "Amari",
+        "Lachlan"
+      ],
+      [
+        "Callie",
+        "Veda"
+      ],
+      [
+        "Elysia",
+        "Liam"
+      ],
+      [
+        "Emersyn",
+        "Joshua"
+      ],
+      [
+        "Joshua",
+        "Matthew"
+      ],
+      [
+        "Lachlan",
+        "Winslow"
+      ],
+      [
+        "Liam",
+        "Callie"
+      ],
+      [
+        "Livia",
+        "Winslow"
+      ],
+      [
+        "Matthew",
+        "Livia"
+      ],
+      [
+        "Merrin",
+        "Winslow"
+      ],
+      [
+        "Nikolas",
+        "Amari"
+      ],
+      [
+        "Santiago",
+        "Merrin"
+      ],
+      [
+        "Veda",
+        "Santiago"
+      ]
+    ]
+  },
+  {
+    "id": "0_4_4_6",
+    "shape": [
+      4,
+      4,
+      6
+    ],
+    "answer": "yes",
+    "root": "Melina",
+    "edges": [
+      [
+        "Annika",
+        "Melina"
+      ],
+      [
+        "Arabelle",
+        "Bella"
+      ],
+      [
+        "Arwen",
+        "Melina"
+      ],
+      [
+        "Ashby",
+        "Annika"
+      ],
+      [
+        "Bella",
+        "Chloe"
+      ],
+      [
+        "Chloe",
+        "Mila"
+      ],
+      [
+        "Elira",
+        "Joshua"
+      ],
+      [
+        "Henry",
+        "Jaylani"
+      ],
+      [
+        "Jaylani",
+        "Elira"
+      ],
+      [
+        "Joshua",
+        "Arwen"
+      ],
+      [
+        "Katherine",
+        "Henry"
+      ],
+      [
+        "Maren",
+        "Ashby"
+      ],
+      [
+        "Mila",
+        "Melina"
+      ],
+      [
+        "Sofia",
+        "Maren"
+      ]
+    ]
+  }
+]

@@ -4,7 +4,7 @@ from collections import Counter
 import json
 from pathlib import Path
 
-from corpus import HERE
+from corpus import SUITES, read_manifest
 
 
 def score(cases, rows):
@@ -59,6 +59,7 @@ def score(cases, rows):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("results", type=Path)
+    parser.add_argument("--suite", choices=SUITES, default="pilot")
     args = parser.parse_args()
-    print(json.dumps(score(json.loads((HERE / "cases.json").read_text()),
+    print(json.dumps(score(read_manifest(args.suite),
                            [json.loads(s) for s in args.results.read_text().splitlines()]),indent=2))

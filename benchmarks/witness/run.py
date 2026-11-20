@@ -10,7 +10,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from corpus import load_cases
+from corpus import SUITES, load_cases
 
 MODEL = "openai/gpt-4.1-mini"
 BUDGET = 2048
@@ -126,13 +126,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--csv")
+    parser.add_argument("--suite", choices=SUITES, default="pilot")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
     if not os.environ.get("OPENROUTER_API_KEY"):
         parser.error("Set OPENROUTER_API_KEY")
     binary = args.binary.resolve(strict=True)
     version = json.loads(subprocess.check_output([binary,"discover","--format","json"]))["version"]
-    cases = load_cases(args.csv)
+    cases = load_cases(args.csv, args.suite)
     with args.output.open("x") as out:
         for i, case in enumerate(cases):
             arms = ("plain", "dlktk") if i % 2 == 0 else ("dlktk", "plain")
