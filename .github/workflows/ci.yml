@@ -6,6 +6,16 @@ on:
   pull_request:
 
 jobs:
+  witness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check witness regressions and rescore saved sessions
+        working-directory: benchmarks/witness
+        run: |
+          python3 -m unittest -v test_diagnostics
+          python3 score.py --suite extension extension.jsonl > /dev/null
+
   test:
     runs-on: ubuntu-latest
     steps:

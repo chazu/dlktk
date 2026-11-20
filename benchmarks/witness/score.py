@@ -39,7 +39,8 @@ def score(cases, rows):
         exact = graph["exact"] if graph is not None and assisted.get("tool_result") else None
         details.append(dict(id=c["id"], family="chain" if len(c["shape"]) == 1 else "branching",
                             gold=c["answer"], **answers, pair=category, exact_graph=exact,
-                            capture=graph, metrics=metrics, error=assisted.get("error")))
+                            capture=graph, metrics=metrics, error=assisted.get("error"),
+                            plain_error=lookup[c["id"], "plain"].get("error")))
     resources = {}
     for arm in counts:
         runs = [r for r in rows if r["arm"] == arm]
@@ -69,7 +70,12 @@ def summarize(rows):
     inexact = [r["metrics"]["tool_verdict_correct"]["score"] for r in rows
                if r["capture"] is not None and not r["capture"]["exact"] and "tool_verdict_correct" in r["metrics"]]
     graphs = [r["capture"] for r in rows if r["capture"] is not None]
-    return dict(cases=len(rows), pairs=Counter(r["pair"] for r in rows),
+    pairs = Counter(r["pair"] for r in rows)
+    scored = {arm: sum((r[field] or {}).get("stage") != "transport" for r in rows)
+              for arm, field in (("plain", "plain_error"), ("dlktk", "error"))}
+    return dict(cases=len(rows), pairs=pairs, scored=scored,
+                paired_correct={arm: pairs["both"] + pairs[arm + "_only"] for arm in scored},
+                paired_n=len(rows) - pairs["unavailable"],
                 correct={arm: sum(r[arm] == r["gold"] for r in rows) for arm in ("plain","dlktk")},
                 metrics=totals, missing=sum(len(g["missing"]) for g in graphs),
                 extra=sum(len(g["extra"]) for g in graphs), duplicates=sum(g["duplicates"] for g in graphs),

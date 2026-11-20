@@ -34,7 +34,10 @@ def evaluate_rows(cases, rows):
             return self.key
 
         def measure(self, test_case, *args, **kwargs):
-            metric = test_case.metadata["measurements"][self.key]
+            case = test_case.metadata["reference"]
+            row = dict(test_case.metadata["session"], answer=test_case.actual_output)
+            _, metrics = assess(case, row)
+            metric = metrics[self.key]
             self.score, self.reason = metric["score"], metric["reason"]
             self.success = self.score >= self.threshold
             return self.score
@@ -57,7 +60,9 @@ def evaluate_rows(cases, rows):
             if measurements:
                 groups[tuple(measurements)].append(LLMTestCase(
                     name=name, input=f"Witness case {c['id']}", expected_output=c["answer"],
-                    actual_output=r["answer"] or "no final answer", metadata={"measurements": measurements}))
+                    actual_output=r["answer"], metadata={
+                        "reference": c, "session": {k: r[k] for k in ("arm", "submission", "tool_result", "error") if k in r}
+                    }))
     for keys, tests in groups.items():
         results = evaluate(tests, [WitnessMetric(k) for k in keys],
                            async_config=AsyncConfig(run_async=False),

@@ -114,6 +114,8 @@ The duplicate-search trial qualified Jev for opt-in retrieval. The objection rev
 
 The witness pilot compares one agent with and without dlktk on ten published testimony puzzles. The paired results include final verdicts, captured attack graphs, and disagreement diagnoses. [Witness pilot](benchmarks/witness/README.md)
 
+The witness extension scores 20 fresh pairs by graph family. The offline scorer and optional DeepEval report measure graph capture, repeated attacks, and agreement with the tool verdict. [Extension protocol](benchmarks/witness/EXTENSION.md) · [Scoring commands](benchmarks/witness/README.md#paired-diagnostics-and-optional-deepeval-report)
+
 ## Build
 
 dlktk pins a `github.com/chazu/pudl` revision in `go.mod`, so a plain clone builds reproducibly with no sibling checkout:

@@ -57,3 +57,27 @@ uv run --python 3.12 --script deepeval_report.py pilot.jsonl --output /tmp/witne
 The output path must be new. Each entry identifies the puzzle and arm and contains scores and diagnostic reasons. Metrics without an applicable observation are omitted. A rejected submission can still have a measurable capture. Only sessions with a tool label contribute to verdict agreement. An invalid final answer counts as incorrect. Transport failures remain separate. The adapter disables telemetry and hosted reporting, and uses saved verdicts and graphs. The first package installation requires network access. The paired scorer has no DeepEval dependency.
 
 For the twenty fresh pairs, use `--suite extension` on the corpus verifier, runner, scorer, or adapter. See the [extension protocol](EXTENSION.md).
+
+## Twenty-pair extension results
+
+GPT-4.1 mini solved **15/19 with dlktk and 14/19 unaided** on puzzles where both arms returned answers. Eleven were correct in both arms, four only with dlktk, three only unaided, and one in neither. The plain session for `0_1_8` timed out. Its assisted session returned the correct answer. We retained all 40 attempts and made no retry. [Saved extension sessions](extension.jsonl)
+
+| Measure | Single chains | Branching graphs |
+|---|---:|---:|
+| Plain accuracy on available pairs | 7/10 | 7/9 |
+| Assisted accuracy on the same pairs | 9/10 | 6/9 |
+| Exact assisted captures, including the unpaired session | 8/10 | 5/10 |
+| Mean fraction of gold attacks captured per puzzle | 82.4% | 65.8% |
+| Missing / extra / repeated directed attacks | 17 / 0 / 0 | 31 / 0 / 0 |
+| Inexact captures that preserved the gold verdict | 1/2 | 2/5 |
+| Final answers agreeing with the returned label | 8/10 | 10/10 |
+
+The chain result needs qualification. On `0_11` the agent captured all eleven attacks and used the correct OUT verdict. On `0_13` it captured just the direct attacker. Dropping twelve downstream attacks happened to preserve OUT. Both cases counted as assisted wins.
+
+All three plain-only wins were branching puzzles with missing attacks in the assisted submission. On `0_4_4_6`, eleven omitted attacks changed the verdict to OUT. The agent followed every branching verdict it received. Branch capture is the first failure to investigate in this sample.
+
+The two chain disagreements with the tool had opposite effects. On `0_5`, a correct graph yielded OUT and the agent answered yes. On `0_6`, an incomplete graph yielded OUT and the agent's yes answer matched the key. Track tool agreement and final accuracy independently.
+
+Across all usable sessions, plain accuracy was 10/10 on yes and 4/9 on no. Assisted accuracy was 7/10 on yes and 9/10 on no. Each arm received the same 2,048-output-token allowance per puzzle. Plain sessions used 3,658 reported input tokens and 8,846 output tokens over 19 completed calls. Assisted sessions used 11,900 input tokens and 2,500 output tokens over 40 calls. Reported costs were USD 0.015617 and USD 0.008760, respectively. Elapsed session totals were 127.553 and 62.536 seconds. The plain total includes the timeout, which returned no usage or billing data.
+
+Rescore with `python3 score.py --suite extension extension.jsonl`. Add `--suite extension` to the DeepEval command above and supply `extension.jsonl` as input. Both scorers produced identical applicable per-case scores on all saved pilot and extension sessions. This is one run of one model on a single template family. The extra model turn and one unavailable pair limit the comparison.
