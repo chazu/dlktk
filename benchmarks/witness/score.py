@@ -5,27 +5,28 @@ import json
 from pathlib import Path
 
 from corpus import SUITES, read_manifest
+from diagnostics import assess, index_sessions
 
 
 def score(cases, rows):
-    lookup = {(r["id"], r["arm"]): r for r in rows}
-    expected = {(c["id"], arm) for c in cases for arm in ("plain","dlktk")}
-    if set(lookup) != expected or len(lookup) != len(rows):
-        raise ValueError("Expected exactly one session per case and arm")
+    lookup = index_sessions(cases, rows)
     counts = {arm: Counter(yes=0, no=0, invalid=0, transport=0) for arm in ("plain","dlktk")}
     pairs = Counter(both=0, plain_only=0, dlktk_only=0, neither=0, unavailable=0)
     details = []
     for c in cases:
         answers = {}
         missing = False
+        measurements = {}
         for arm, tally in counts.items():
             r = lookup[c["id"], arm]
-            if r.get("error", {}).get("stage") == "transport":
+            measurements[arm] = assess(c, r)
+            final = measurements[arm][1].get("final_accuracy")
+            if final is None:
                 tally["transport"] += 1
                 missing = True
             elif r["answer"] not in ("yes", "no"):
                 tally["invalid"] += 1
-            elif r["answer"] == c["answer"]:
+            elif final["score"] == 1:
                 tally[c["answer"]] += 1
             answers[arm] = r["answer"]
         right = [arm for arm in answers if answers[arm] == c["answer"]]
@@ -34,12 +35,11 @@ def score(cases, rows):
             category = right[0] + "_only"
         pairs[category] += 1
         assisted = lookup[c["id"],"dlktk"]
-        submission = assisted.get("submission")
-        exact = None
-        if assisted.get("tool_result"):
-            edges = sorted([a["attacker"], a["target"]] for a in submission["attacks"])
-            exact = submission["root"] == c["root"] and edges == c["edges"]
-        details.append(dict(id=c["id"], gold=c["answer"], **answers, pair=category, exact_graph=exact))
+        graph, metrics = measurements["dlktk"]
+        exact = graph["exact"] if graph is not None and assisted.get("tool_result") else None
+        details.append(dict(id=c["id"], family="chain" if len(c["shape"]) == 1 else "branching",
+                            gold=c["answer"], **answers, pair=category, exact_graph=exact,
+                            capture=graph, metrics=metrics, error=assisted.get("error")))
     resources = {}
     for arm in counts:
         runs = [r for r in rows if r["arm"] == arm]
@@ -53,7 +53,27 @@ def score(cases, rows):
             "cost_usd": round(sum(costs), 7) if all(c is not None for c in costs) else None,
             "session_seconds": sum(r["ms"] for r in runs) / 1000,
         }
-    return dict(correct_by_gold=counts, pairs=pairs, resources=resources, cases=details)
+    groups = {family: summarize([r for r in details if r["family"] == family])
+              for family in ("chain", "branching")}
+    return dict(correct_by_gold=counts, pairs=pairs, resources=resources, groups=groups,
+                diagnostics=summarize(details), cases=details)
+
+
+def summarize(rows):
+    totals = {}
+    for r in rows:
+        for key, metric in r["metrics"].items():
+            tally = totals.setdefault(key, {"sum": 0, "n": 0})
+            tally["sum"] += metric["score"]
+            tally["n"] += 1
+    inexact = [r["metrics"]["tool_verdict_correct"]["score"] for r in rows
+               if r["capture"] is not None and not r["capture"]["exact"] and "tool_verdict_correct" in r["metrics"]]
+    graphs = [r["capture"] for r in rows if r["capture"] is not None]
+    return dict(cases=len(rows), pairs=Counter(r["pair"] for r in rows),
+                correct={arm: sum(r[arm] == r["gold"] for r in rows) for arm in ("plain","dlktk")},
+                metrics=totals, missing=sum(len(g["missing"]) for g in graphs),
+                extra=sum(len(g["extra"]) for g in graphs), duplicates=sum(g["duplicates"] for g in graphs),
+                preserved_inexact_verdicts={"sum": sum(inexact), "n": len(inexact)})
 
 
 if __name__ == "__main__":

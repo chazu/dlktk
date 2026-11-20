@@ -42,3 +42,18 @@ Both arms used OpenRouter with provider OpenAI and returned model ID `openai/gpt
 On `0_1_2`, both arms answered yes. The assisted agent recorded the exact graph. dlktk returned OUT because one direct objection survived. The final response discussed the defeated objection and contradicted the tool result.
 
 These ten public puzzles show a concrete benefit on long chains and two distinct failure points: capture and final reporting. One model, one attempt per arm, a forced graph call, and one strict duplicate policy limit the conclusion. A correct verdict alone can conceal an incomplete graph. Keep this pilot as a diagnostic. If extending it, use fresh cases and continue scoring both capture and verdict. To reproduce this report offline, run `python3 score.py pilot.jsonl`.
+
+## Paired diagnostics and optional DeepEval report
+
+`score.py` reports paired outcomes, per-puzzle edge differences, and totals for chains and branching graphs. In `diagnostics.metrics`, each entry has a sum and the number of applicable cases. Divide the attack-recall sum by its count for mean per-puzzle recall. A reversed edge counts as one missing and one extra attack. Duplicate edges affect the repetition count and the runner's acceptance check. Graph comparison uses the root and the set of distinct directed attacks. The older `exact_graph` field applies only to accepted graphs.
+
+The optional adapter exposes the same measurements through DeepEval 4.3.4. From this directory:
+
+```sh
+python3 score.py pilot.jsonl
+uv run --python 3.12 --script deepeval_report.py pilot.jsonl --output /tmp/witness-pilot-metrics.json
+```
+
+The output path must be new. Each entry identifies the puzzle and arm and contains scores and diagnostic reasons. Metrics without an applicable observation are omitted. A rejected submission can still have a measurable capture. Only sessions with a tool label contribute to verdict agreement. An invalid final answer counts as incorrect. Transport failures remain separate. The adapter disables telemetry and hosted reporting, and uses saved verdicts and graphs. The first package installation requires network access. The paired scorer has no DeepEval dependency.
+
+For the twenty fresh pairs, use `--suite extension` on the corpus verifier, runner, scorer, or adapter. See the [extension protocol](EXTENSION.md).
