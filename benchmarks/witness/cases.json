@@ -1,0 +1,386 @@
+[
+  {
+    "id": "0_4",
+    "shape": [
+      4
+    ],
+    "answer": "yes",
+    "root": "Leonardo",
+    "edges": [
+      [
+        "Ava",
+        "Renata"
+      ],
+      [
+        "Jorja",
+        "Ava"
+      ],
+      [
+        "Makai",
+        "Leonardo"
+      ],
+      [
+        "Renata",
+        "Makai"
+      ]
+    ]
+  },
+  {
+    "id": "0_3",
+    "shape": [
+      3
+    ],
+    "answer": "no",
+    "root": "Amayah",
+    "edges": [
+      [
+        "Jada",
+        "Amayah"
+      ],
+      [
+        "Raegan",
+        "Salvador"
+      ],
+      [
+        "Salvador",
+        "Jada"
+      ]
+    ]
+  },
+  {
+    "id": "0_9",
+    "shape": [
+      9
+    ],
+    "answer": "no",
+    "root": "Gabriel",
+    "edges": [
+      [
+        "Briella",
+        "Emory"
+      ],
+      [
+        "Easton",
+        "Juliet"
+      ],
+      [
+        "Emory",
+        "Easton"
+      ],
+      [
+        "Juliet",
+        "Gabriel"
+      ],
+      [
+        "Kinley",
+        "Kynlee"
+      ],
+      [
+        "Kynlee",
+        "Briella"
+      ],
+      [
+        "Millie",
+        "Zaila"
+      ],
+      [
+        "Tinsley",
+        "Kinley"
+      ],
+      [
+        "Zaila",
+        "Tinsley"
+      ]
+    ]
+  },
+  {
+    "id": "0_8",
+    "shape": [
+      8
+    ],
+    "answer": "yes",
+    "root": "Allison",
+    "edges": [
+      [
+        "Cora",
+        "Allison"
+      ],
+      [
+        "Gianna",
+        "Ophelia"
+      ],
+      [
+        "Kamara",
+        "Cora"
+      ],
+      [
+        "Lennox",
+        "Kamara"
+      ],
+      [
+        "Olivia",
+        "Lennox"
+      ],
+      [
+        "Ophelia",
+        "Skylar"
+      ],
+      [
+        "Phoenix",
+        "Olivia"
+      ],
+      [
+        "Skylar",
+        "Phoenix"
+      ]
+    ]
+  },
+  {
+    "id": "0_2_2",
+    "shape": [
+      2,
+      2
+    ],
+    "answer": "yes",
+    "root": "Henry",
+    "edges": [
+      [
+        "Brooks",
+        "Ethan"
+      ],
+      [
+        "Ethan",
+        "Henry"
+      ],
+      [
+        "Keely",
+        "Henry"
+      ],
+      [
+        "Suri",
+        "Keely"
+      ]
+    ]
+  },
+  {
+    "id": "0_1_2",
+    "shape": [
+      1,
+      2
+    ],
+    "answer": "no",
+    "root": "Starla",
+    "edges": [
+      [
+        "Alistair",
+        "Starla"
+      ],
+      [
+        "Harlow",
+        "Alistair"
+      ],
+      [
+        "Mila",
+        "Starla"
+      ]
+    ]
+  },
+  {
+    "id": "0_2_5",
+    "shape": [
+      2,
+      5
+    ],
+    "answer": "no",
+    "root": "Holden",
+    "edges": [
+      [
+        "Camryn",
+        "Vivienne"
+      ],
+      [
+        "Naomi",
+        "Camryn"
+      ],
+      [
+        "Quinn",
+        "Holden"
+      ],
+      [
+        "Rosalie",
+        "Naomi"
+      ],
+      [
+        "Tenley",
+        "Quinn"
+      ],
+      [
+        "Vivienne",
+        "Holden"
+      ],
+      [
+        "Xavier",
+        "Rosalie"
+      ]
+    ]
+  },
+  {
+    "id": "0_2_6",
+    "shape": [
+      2,
+      6
+    ],
+    "answer": "yes",
+    "root": "Adam",
+    "edges": [
+      [
+        "Aidan",
+        "Adam"
+      ],
+      [
+        "Aris",
+        "Adam"
+      ],
+      [
+        "Cassius",
+        "Isha"
+      ],
+      [
+        "Emersyn",
+        "Ethan"
+      ],
+      [
+        "Ethan",
+        "Cassius"
+      ],
+      [
+        "Isha",
+        "Aris"
+      ],
+      [
+        "Meadow",
+        "Emersyn"
+      ],
+      [
+        "Zuri",
+        "Aidan"
+      ]
+    ]
+  },
+  {
+    "id": "0_2_4_6",
+    "shape": [
+      2,
+      4,
+      6
+    ],
+    "answer": "yes",
+    "root": "Millie",
+    "edges": [
+      [
+        "Adalyn",
+        "Millie"
+      ],
+      [
+        "Ashby",
+        "Millie"
+      ],
+      [
+        "Charles",
+        "Collins"
+      ],
+      [
+        "Christopher",
+        "Victoria"
+      ],
+      [
+        "Collins",
+        "Kamryn"
+      ],
+      [
+        "Harper",
+        "Christopher"
+      ],
+      [
+        "Kamryn",
+        "Harper"
+      ],
+      [
+        "Lennox",
+        "Meadow"
+      ],
+      [
+        "Maxton",
+        "Adalyn"
+      ],
+      [
+        "Meadow",
+        "Maxton"
+      ],
+      [
+        "Nyah",
+        "Ashby"
+      ],
+      [
+        "Victoria",
+        "Millie"
+      ]
+    ]
+  },
+  {
+    "id": "0_2_3_6",
+    "shape": [
+      2,
+      3,
+      6
+    ],
+    "answer": "no",
+    "root": "Charlotte",
+    "edges": [
+      [
+        "Adalyn",
+        "Liora"
+      ],
+      [
+        "Addison",
+        "Kaylani"
+      ],
+      [
+        "Ariana",
+        "Maylin"
+      ],
+      [
+        "Isaiah",
+        "Kelsey"
+      ],
+      [
+        "Jada",
+        "Ariana"
+      ],
+      [
+        "Kaylani",
+        "Isaiah"
+      ],
+      [
+        "Kelsey",
+        "Maxine"
+      ],
+      [
+        "Liora",
+        "Charlotte"
+      ],
+      [
+        "Maxine",
+        "Serenity"
+      ],
+      [
+        "Maylin",
+        "Charlotte"
+      ],
+      [
+        "Serenity",
+        "Charlotte"
+      ]
+    ]
+  }
+]
